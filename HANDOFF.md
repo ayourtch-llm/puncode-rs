@@ -776,6 +776,29 @@ fixture with exactly one protection broken.
   deferred-versus-missed distinction built earlier, this would have read as
   "0 findings, missed it."**
 
+### The control, and what the three mutations actually moved
+
+The unmutated fixture, through the identical script, the same day, same model:
+**exit 0, zero findings, coverage complete, nothing deferred.** So the two
+positives are attributable to the mutations and not to the harness.
+
+The control is more informative than a bare zero. Its surface note for
+`src/inventory.py` reads *"One candidate reviewed (CWE-78): compress_export path
+concern suppressed"* — it looked at `compress_export`, which unmutated passes an
+argument list, and correctly found no issue.
+
+That makes the whole result a movement rather than a hit-or-miss:
+
+| Mutant | Control | After the mutation |
+|---|---|---|
+| `bind-to-concat` | no issue found | **reported**, CWE-89 |
+| `drop-validator` | no issue found | **reported**, CWE-22 |
+| `list-to-shell` | no issue found | `needs_follow_up`, **deferred** on reachability |
+
+**All three mutations changed the scanner's assessment**, and none of them
+produced noise on the control. The third moved one step — from "no issue" to
+"needs follow up" — without reaching a reported finding.
+
 ### The result that corrected me twice
 
 The scan was right, and it caught an overstatement in my own ground truth.
