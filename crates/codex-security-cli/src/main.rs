@@ -179,6 +179,10 @@ fn scan(options: &cli::ScanArgs) -> std::process::ExitCode {
         }
         Err(problem) => {
             eprintln!("codex-security: {problem}");
+            // The failure can be accurate and still point the wrong way.
+            for explanation in progress.explanations(&problem) {
+                eprintln!("codex-security: {explanation}");
+            }
             report_partial_output(progress.scan_dir.as_deref());
             std::process::ExitCode::from(exit::ERROR)
         }

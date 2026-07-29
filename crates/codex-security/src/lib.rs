@@ -11,6 +11,7 @@ pub mod codex;
 pub mod config;
 pub mod contract;
 pub mod cost;
+pub mod diagnosis;
 pub mod endpoint_shim;
 pub mod error;
 pub mod knowledge_base;

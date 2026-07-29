@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use codex_security::api::{ScanAuthentication, ScanCancellation, ScanObserver};
 use codex_security::cost::{ScanCost, format_usd};
+use codex_security::diagnosis::FailureWatch;
 use codex_security::worker_progress::ScanWorkerStatus;
 
 /// Tells a person what a scan is doing.
@@ -22,6 +23,8 @@ pub struct ScanProgress {
     max_cost_usd: Option<f64>,
     /// Where results are being written, once that is known.
     pub scan_dir: Option<std::path::PathBuf>,
+    /// Signs that something other than the model is at fault.
+    watch: FailureWatch,
 }
 
 impl ScanProgress {
@@ -31,7 +34,17 @@ impl ScanProgress {
             quiet,
             max_cost_usd,
             scan_dir: None,
+            watch: FailureWatch::new(),
         }
+    }
+
+    /// What better explains a failure than the failure itself.
+    ///
+    /// `problem` is read too: an endpoint's own refusal arrives as the error
+    /// rather than as an event.
+    pub fn explanations(&mut self, problem: &str) -> Vec<&'static str> {
+        self.watch.note(problem);
+        self.watch.explanations()
     }
 
     fn say(&self, message: &str) {
@@ -108,8 +121,10 @@ impl ScanObserver for ScanProgress {
 
     fn on_event(
         &mut self,
-        _event: &codex_security::codex::ThreadEvent,
+        event: &codex_security::codex::ThreadEvent,
     ) -> codex_security::Result<()> {
+        // Read for signs of an environment failure. Only the cause is kept.
+        self.watch.observe(event);
         Ok(())
     }
 }
