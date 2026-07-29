@@ -1082,8 +1082,28 @@ ones to watch:
 `tests/codex.rs`, `tests/multiscan.rs`, `tests/scan_comparison.rs`,
 `cli/tests/scan_run.rs`.
 
-They were left alone deliberately: none has been observed to flake, and patching
+They were left alone deliberately: none had been observed to flake, and patching
 ten files against a race that may never fire in them is ten unevaluated changes.
+
+**`runtime/python.rs` then flaked, and it needed a different fix.** Elsewhere
+ETXTBSY surfaces as an error and is retried. Here resolution *probes* each
+candidate interpreter and moves on when one will not run, so a transient failure
+silently returns a **different** interpreter — the test got the PATH one instead
+of the managed one, which no assertion can distinguish from a real preference
+bug. So the race is removed from the setup: `interpreter()` now waits until the
+stub can be started before any test uses it.
+
+Two wrong turns getting there, both caught by running it:
+
+- Waiting for the stub to *succeed* broke the tests that write stubs which
+  deliberately exit non-zero. What matters is that it started, not what it did.
+- Waiting with `output()` ran them to completion — and one stub is `sleep 30`,
+  written to exercise the probe timeout. That added thirty seconds to every test
+  run. It spawns and kills instead.
+
+**Do not tune the sleep interval without checking what the wall time is.** The
+30 s was a fixed cost from that one stub, not from the retry loop, and changing
+the interval from 20 ms to 2 ms moved the total not at all.
 
 **Do not verify this fix by rerunning until it passes.** At a one-in-thirty base
 rate that proves nothing, and twelve clean runs after the fix proved nothing

@@ -247,7 +247,52 @@ mod tests {
         let path = dir.join(name);
         std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write");
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        wait_until_runnable(&path);
         path
+    }
+
+    /// Runs the stub until the operating system lets it, before any test uses it.
+    ///
+    /// Writing an executable and running it from the same process races on
+    /// Linux: a thread that forks between another thread's open and close
+    /// inherits the write descriptor, and the exec fails with `Text file busy`.
+    ///
+    /// Elsewhere that surfaces as an error and is retried. Here it does not:
+    /// resolution *probes* each candidate and moves on when one will not run,
+    /// so a transient failure silently returns a different interpreter. That is
+    /// what `prefers_a_managed_runtime_over_path` caught — it got the PATH
+    /// interpreter instead of the managed one — and an assertion cannot tell
+    /// that from a real preference bug. So the race is removed from the setup
+    /// rather than tolerated in the assertion.
+    fn wait_until_runnable(path: &Path) {
+        // Spawned and killed, never waited on. One stub in this file is
+        // `sleep 30`, written to exercise the probe timeout, and running these
+        // to completion would add half a minute to every test run. All that is
+        // needed is whether the operating system let it start.
+        //
+        // Fine-grained because the busy window lasts only until the forking
+        // thread reaches its own exec.
+        for _ in 0..1_000 {
+            match std::process::Command::new(path)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(mut child) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                Err(error) => panic!("{} could not run: {error}", path.display()),
+            }
+        }
+        panic!(
+            "{} was still busy after a thousand attempts",
+            path.display()
+        );
     }
 
     /// A stand-in that answers the probe correctly.
