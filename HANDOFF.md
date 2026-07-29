@@ -241,16 +241,33 @@ complete corpus run once. Do not undo the copy.
 
 Measured results, one model (deepreinforce-ai_Ornith-1.0-35B, local):
 
-| Run | Detection | False positives | Decoy trips |
-|---|---|---|---|
-| 12:59 | 7 of 8 | 0 | — (no decoys yet) |
-| 14:53 | 8 of 8 | 0 | 0 of 5 |
-| 15:09 | 7 of 8 | 0 | 0 of 5 |
+| Run | Detection | False positives | Decoy trips | Corpus |
+|---|---|---|---|---|
+| 12:59 | 7 of 8 | 0 | — (no decoys yet) | answers in the source |
+| 14:53 | 8 of 8 | 0 | 0 of 5 | answers in the source |
+| 15:09 | 7 of 8 | 0 | 0 of 5 | answers in the source |
+| 16:24 | 7 of 8 | 0 | 0 of 5 | **answers removed** |
 
 Three runs over an unchanged corpus. **Seven of the eight flaws are found every
 time; CWE-208, the timing-unsafe comparison, is found roughly one run in three.**
 Read a single run accordingly — 88% and 100% here are the same model on the same
 code, and the difference is entirely that one flaw.
+
+**Taking the answers out changed detection by nothing.** Same seven found, same
+one missed, `bench --baseline` reports no flaw lost and none gained — only
+`off-by-one` moving from medium to high. `c-memory` scored 3 of 3 with its
+comments naming all three flaws and 3 of 3 without them.
+
+That was not what I expected, and I had already started reasoning from the
+opposite assumption: the run was slower than the hinted ones and I called that
+"consistent with the hints having been doing real work". It is not evidence of
+anything. **The corpus still had to be fixed** — a number measured over a fixture
+that gives its answers away is not a measurement whatever it happens to equal —
+but the fix bought correctness, not a different result.
+
+It was also the first fully clean sweep: four fixtures, four exit 0, `report.md`
+produced every time, every manifest written by the plugin's own writer, `verify`
+clean on all four.
 
 And the two 88% runs are not the same result either. Reading the scans rather
 than the scores showed CWE-208 came out **never noticed** in the 12:59 run and
