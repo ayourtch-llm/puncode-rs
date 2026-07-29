@@ -509,6 +509,27 @@ pub fn render(outcome: &Report) -> String {
         }
     }
 
+    // Always, not only when something regressed. Every number above is one
+    // sample: over this corpus one flaw has been detected in one run of seven,
+    // and one fixture has scored 2, 3 and 4 of 4 on identical code. The
+    // per-class breakdown is the most sampling-sensitive part of it — "0 of 1"
+    // reads as a statement about the scanner and is a single coin toss.
+    if report.detection_rate().is_some() {
+        lines.push(String::new());
+        lines.push(
+            "Each fixture above was scanned once. This scanner's output varies between runs over"
+                .to_owned(),
+        );
+        lines.push(
+            "unchanged code, by more than most of the differences a single run will show you."
+                .to_owned(),
+        );
+        lines.push(
+            "For a number worth acting on: scan --repeat N, then consensus over the results."
+                .to_owned(),
+        );
+    }
+
     if !outcome.unscanned.is_empty() {
         lines.push(String::new());
         // Said plainly: an absent scan is not a failure to detect, and the
@@ -930,5 +951,53 @@ mod corpus_audit_tests {
         assert_eq!(outcome.provenance.models.len(), 1);
         assert!(outcome.provenance.models.contains("a-model"));
         assert_eq!(outcome.provenance.unrecorded, 0);
+    }
+
+    /// Every number this command prints is one sample, and the numbers most
+    /// likely to be read as capability — the per-class breakdown — are the most
+    /// sampling-sensitive of them.
+    #[test]
+    fn a_measured_rate_always_carries_its_sampling_caveat() {
+        let results = tempfile::tempdir().expect("a directory");
+        let fixture = results.path().join("orders-api");
+        std::fs::create_dir_all(&fixture).expect("creates");
+        std::fs::write(
+            fixture.join("findings.json"),
+            serde_json::json!({ "findings": [
+                { "title": "SQLi", "locations": [{ "path": "src/app.py", "startLine": 10 }] },
+            ]})
+            .to_string(),
+        )
+        .expect("writes");
+
+        let outcome = run(
+            &corpus_dir().join("benchmark/ground-truth.json"),
+            results.path(),
+            &corpus_dir(),
+        )
+        .expect("runs");
+        let rendered = render(&outcome);
+
+        assert!(rendered.contains("scanned once"), "{rendered}");
+        assert!(rendered.contains("varies between runs"), "{rendered}");
+        // And says what to do instead, or it is a shrug rather than a caveat.
+        assert!(rendered.contains("--repeat"), "{rendered}");
+        assert!(rendered.contains("consensus"), "{rendered}");
+    }
+
+    /// Not said when there is no rate to qualify: a report over no scans has
+    /// nothing to be over-read.
+    #[test]
+    fn an_unmeasured_run_is_not_given_a_caveat_about_sampling() {
+        let empty = tempfile::tempdir().expect("a directory");
+
+        let outcome = run(
+            &corpus_dir().join("benchmark/ground-truth.json"),
+            empty.path(),
+            &corpus_dir(),
+        )
+        .expect("runs");
+
+        assert!(!render(&outcome).contains("scanned once"));
     }
 }
