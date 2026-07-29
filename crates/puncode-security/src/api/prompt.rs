@@ -133,10 +133,11 @@ fn finalization_instructions() -> [String; 3] {
         // was running at 17:29. finalize_scan_contract.py returns early when it
         // finds a sealed manifest, so the hand-written bytes survive to the
         // publication check and fail it, after every finding has been made.
-        "Do not set scan.status to \"completed\" or fill in scan.sealedAt yourself, and do not \
-         invent a timestamp for either. The finalization command below seals the manifest and \
-         writes those fields; a manifest that already looks sealed makes it return without \
-         rewriting the file, and the scan is then refused when it is published."
+        "Do not set scan.status to \"completed\", do not fill in scan.sealedAt, and leave \
+         scan.artifacts out entirely; do not invent a timestamp or a digest for any of them. The \
+         finalization command below writes all three. A manifest carrying either sealedAt or \
+         artifacts already looks sealed to it, so it returns without rewriting the file, and the \
+         scan is refused when it is published."
             .to_owned(),
         "Writing scan-manifest.json, findings.json and coverage.json does not finish the scan. \
          The scan is unfinished until report.md exists in \"$CODEX_SECURITY_SCAN_DIR\", and \

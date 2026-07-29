@@ -437,6 +437,33 @@ matters**: an agent told only "do not" finds an exception it believes is
 reasonable, which is how the scope and target-kind instructions had to be
 written too.
 
+**The first version of that instruction covered half the trigger.** The
+plugin's test is
+
+```python
+was_sealed = scan.get("sealedAt") is not None or scan.get("artifacts") is not None
+```
+
+and the instruction named only `sealedAt`, leaving the agent free to populate
+`artifacts` and reach the same early return. It names both now.
+
+**Do not try to tell the two apart from the finished manifest.** Every manifest
+on disk carries `sealedAt` and `artifacts`, because finalize writes them on the
+path that succeeds too. The discriminator is `manifest_form`: sorted keys and
+mode 600 mean the plugin's writer, insertion order and 664 mean the agent. On
+the four cases where both are known it is exact —
+
+| Scan | Written by | Saved |
+|---|---|---|
+| `sealfix-1/link-service` | agent | failed |
+| `sealfix-1/orders-api-b` | plugin | saved |
+| `variance/run-1` | agent | failed |
+| `variance/run-4` | plugin | saved |
+
+— which makes `manifest_form` a predictor of this failure and not only an
+explanation after it. The converse still does not hold: of eleven scans flagged
+as not-from-the-writer, three published perfectly well.
+
 Registered in `is_scope_extension`. That guard was checked by removing the entry
 and watching the differential oracle fail with 32 mismatches — not assumed.
 

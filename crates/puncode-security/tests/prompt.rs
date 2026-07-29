@@ -465,12 +465,17 @@ fn tells_the_agent_not_to_seal_the_manifest_itself() {
 
     assert!(prompt.contains("Do not set scan.status"), "{prompt}");
     assert!(prompt.contains("scan.sealedAt"), "{prompt}");
+    // Both halves of the plugin's own test for an already-sealed manifest:
+    //
+    //     was_sealed = scan.get("sealedAt") is not None
+    //                  or scan.get("artifacts") is not None
+    //
+    // Naming only sealedAt leaves the agent free to populate artifacts and
+    // trigger exactly the same early return.
+    assert!(prompt.contains("scan.artifacts"), "{prompt}");
     // The reason, not just the rule: an agent told only "do not" will find a
     // way to do it that feels like an exception.
-    assert!(
-        prompt.contains("makes it return without rewriting"),
-        "{prompt}"
-    );
+    assert!(prompt.contains("returns without rewriting"), "{prompt}");
 }
 
 /// And it must be said whatever the scan is pointed at, because the failure
