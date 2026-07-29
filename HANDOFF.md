@@ -567,6 +567,29 @@ findings by running the code, and the workbench refuses a scan whose tree
 changed. Those two requirements are in direct conflict on any repository with a
 build step, and the cost lands at the very end.
 
+## Half a corpus run can be lost to a hand-written manifest
+
+The mechanism, established from the artefacts rather than guessed:
+
+`finalize_scan_contract.py` has an early return — if the manifest it finds is
+already sealed, it writes `report.md` and leaves the manifest alone. So when the
+agent writes `scan-manifest.json` itself with `status: "completed"` and a
+`sealedAt`, its bytes survive to publication, where the workbench recomputes the
+canonical form and refuses them.
+
+The evidence is unambiguous. Both refused manifests are in insertion key order
+and mode 664; the one that saved is sorted and 600. And `orders-api-b`'s
+`sealedAt` is `2026-07-29T17:45:00Z` — a round minute, while that scan was
+running at 17:29.
+
+`prompt.rs` now tells the agent not to set either field, and why. **The "why"
+matters**: an agent told only "do not" finds an exception it believes is
+reasonable, which is how the scope and target-kind instructions had to be
+written too.
+
+Registered in `is_scope_extension`. That guard was checked by removing the entry
+and watching the differential oracle fail with 32 mismatches — not assumed.
+
 ## Three save failures, three different causes
 
 All three are reported by `scan` now, with evidence rather than only a
