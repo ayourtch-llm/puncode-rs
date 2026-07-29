@@ -203,14 +203,29 @@ complete corpus run once. Do not undo the copy.
 
 Measured results, one model (deepreinforce-ai_Ornith-1.0-35B, local):
 
-| Date | Detection | False positives | Decoy trips |
+| Run | Detection | False positives | Decoy trips |
 |---|---|---|---|
-| 2026-07-29 | 7 of 8 (88%) | 0 | — (no decoys yet) |
-| 2026-07-29 | 8 of 8 (100%) | 0 | 0 of 5 |
+| 12:59 | 7 of 8 | 0 | — (no decoys yet) |
+| 14:53 | 8 of 8 | 0 | 0 of 5 |
+| 15:09 | 7 of 8 | 0 | 0 of 5 |
 
-The difference between those two is run-to-run variation on CWE-208, not
-improvement: the corpus did not change between them. With eight planted flaws
-one finding moves the rate by 12.5%, so treat a single run as weak evidence.
+Three runs over an unchanged corpus. **Seven of the eight flaws are found every
+time; CWE-208, the timing-unsafe comparison, is found roughly one run in three.**
+Read a single run accordingly — 88% and 100% here are the same model on the same
+code, and the difference is entirely that one flaw.
+
+The decoys have never been tripped, across both runs that had them.
+
+Severity is where the model differs most, and consistently: it rates the
+memory-safety flaws lower than this corpus does and injection higher, and it
+disagrees with *itself* between runs — `use-after-free` came out medium in one
+run and high in another, `sqli-user` critical then high. `bench --baseline`
+names that; the aggregate rate hides it entirely.
+
+Two save failures seen that are not detection problems: "The sealed scan
+manifest changed while it was being read" and, before the snapshot fix,
+"Repository HEAD changed while the scan was running". Both happen after all the
+work is done.
 
 ## Open
 
