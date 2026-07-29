@@ -93,7 +93,15 @@ fn through(shim: &EndpointShim, body: &str) -> String {
 /// appended to a base URL that already carries `/v1`. A live endpoint cares
 /// about the difference even though the recorder in these tests does not.
 fn through_path(shim: &EndpointShim, path: &str, body: &str) -> String {
-    let address = shim.base_url().replace("http://", "");
+    // base_url carries this run's secret as its first path segment; a caller
+    // that does not have it is refused.
+    let base = shim.base_url();
+    let without_scheme = base.trim_start_matches("http://");
+    let (address, prefix) = without_scheme
+        .split_once('/')
+        .expect("a secret in the base URL");
+    let path = format!("/{prefix}{path}");
+    let path = path.as_str();
     let mut stream = TcpStream::connect(address).expect("connects");
     stream
         .write_all(
@@ -533,4 +541,106 @@ fn tightens_a_capture_destination_that_was_already_readable() {
         .permissions()
         .mode();
     assert_eq!(mode & 0o777, 0o600, "mode was {:o}", mode & 0o777);
+}
+
+/// The listener is on loopback, which keeps other machines out but not other
+/// processes on this one. Without a secret, anything local could use a running
+/// scan's forwarder as an unauthenticated relay to the endpoint.
+#[test]
+fn refuses_a_caller_without_this_runs_secret() {
+    use std::io::Write as _;
+
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let shim = EndpointShim::start(&recorder.base_url, &merging()).expect("starts");
+    let address = shim
+        .base_url()
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .expect("an address")
+        .to_owned();
+
+    let mut answers = Vec::new();
+    for path in ["/responses", "/v1/responses", "/deadbeef/responses"] {
+        let mut stream = TcpStream::connect(&address).expect("connects");
+        write!(
+            stream,
+            "POST {path} HTTP/1.1\r\nHost: local\r\nContent-Length: 2\r\n\r\n{{}}"
+        )
+        .expect("writes");
+        stream.flush().expect("flushes");
+        let mut answer = String::new();
+        stream.read_to_string(&mut answer).expect("reads");
+        answers.push((path, answer));
+    }
+
+    for (path, answer) in &answers {
+        assert!(answer.contains("404"), "{path} was not refused:\n{answer}");
+    }
+    assert!(
+        recorder.received().is_empty(),
+        "nothing may reach the endpoint: {:?}",
+        recorder.received()
+    );
+}
+
+/// A refused caller must not be able to put anything into the traffic capture,
+/// which is a record someone will read to diagnose a scan.
+#[test]
+fn a_refused_caller_cannot_write_to_the_capture() {
+    use std::io::Write as _;
+
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let directory = tempfile::tempdir().expect("a directory");
+    let destination = directory.path().join("traffic.jsonl");
+    let shim = EndpointShim::start(
+        &recorder.base_url,
+        &ShimOptions {
+            adaptations: Adaptations::default(),
+            capture: Some(destination.clone()),
+            capture_limit: CaptureLimit::Default,
+        },
+    )
+    .expect("starts");
+    let address = shim
+        .base_url()
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .expect("an address")
+        .to_owned();
+
+    let mut stream = TcpStream::connect(&address).expect("connects");
+    write!(
+        stream,
+        "POST /responses HTTP/1.1\r\nHost: local\r\nContent-Length: 9\r\n\r\n{{\"x\":\"y\"}}"
+    )
+    .expect("writes");
+    stream.flush().expect("flushes");
+    let mut answer = String::new();
+    let _ = stream.read_to_string(&mut answer);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    let written = std::fs::read_to_string(&destination).unwrap_or_default();
+    assert!(written.is_empty(), "the capture was polluted: {written}");
+}
+
+/// Two runs must not share a secret, or one scan's forwarder would accept the
+/// other's traffic.
+#[test]
+fn each_run_gets_its_own_secret() {
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let first = EndpointShim::start(&recorder.base_url, &merging()).expect("starts");
+    let second = EndpointShim::start(&recorder.base_url, &merging()).expect("starts");
+
+    let secret = |shim: &EndpointShim| {
+        shim.base_url()
+            .rsplit('/')
+            .next()
+            .expect("a secret")
+            .to_owned()
+    };
+
+    assert_ne!(secret(&first), secret(&second));
+    assert_eq!(secret(&first).len(), 32, "128 bits as hex");
 }

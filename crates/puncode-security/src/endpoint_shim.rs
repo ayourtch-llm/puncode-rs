@@ -289,6 +289,15 @@ pub struct ShimOptions {
 /// with anything the person is already running.
 pub struct EndpointShim {
     address: SocketAddr,
+    /// A secret this run's requests must carry, as the first path segment.
+    ///
+    /// The listener is on loopback, which keeps other machines out but not
+    /// other processes on this one. On a shared host anything local could
+    /// otherwise use a running scan's forwarder as an unauthenticated relay to
+    /// the endpoint, or push content into its traffic capture. The secret is
+    /// only ever written to the Codex configuration, which is private to its
+    /// owner.
+    secret: String,
     running: Arc<AtomicBool>,
 }
 
@@ -315,6 +324,8 @@ impl EndpointShim {
             Error::configuration(format!("Could not start the endpoint adapter: {error}"))
         })?;
 
+        let secret = per_run_secret()?;
+        let expected = secret.clone();
         let running = Arc::new(AtomicBool::new(true));
         let alive = Arc::clone(&running);
         std::thread::spawn(move || {
@@ -325,22 +336,32 @@ impl EndpointShim {
                 let Ok(connection) = connection else { continue };
                 let upstream = upstream.clone();
                 let capture = capture.clone();
+                let expected = expected.clone();
                 // A scan runs several agents at once, so connections are served
                 // concurrently rather than one after another.
                 std::thread::spawn(move || {
-                    let _ =
-                        serve_connection(connection, &upstream, adaptations, capture.as_deref());
+                    let _ = serve_connection(
+                        connection,
+                        &upstream,
+                        &expected,
+                        adaptations,
+                        capture.as_deref(),
+                    );
                 });
             }
         });
 
-        Ok(Self { address, running })
+        Ok(Self {
+            address,
+            secret,
+            running,
+        })
     }
 
     /// The address Codex should be pointed at.
     #[must_use]
     pub fn base_url(&self) -> String {
-        format!("http://{}", self.address)
+        format!("http://{}/{}", self.address, self.secret)
     }
 }
 
@@ -353,9 +374,37 @@ impl Drop for EndpointShim {
 }
 
 /// Forwards one request and streams the answer back.
+/// A secret for this run, from the operating system's randomness.
+fn per_run_secret() -> Result<String> {
+    let mut bytes = [0u8; 16];
+    let mut source = std::fs::File::open("/dev/urandom").map_err(|error| {
+        Error::configuration(format!("Could not start the endpoint adapter: {error}"))
+    })?;
+    source.read_exact(&mut bytes).map_err(|error| {
+        Error::configuration(format!("Could not start the endpoint adapter: {error}"))
+    })?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+/// The path with this run's secret removed, or `None` if it did not carry it.
+///
+/// Compared in full rather than by prefix so a shorter guess cannot pass.
+fn without_secret<'a>(path: &'a str, secret: &str) -> Option<&'a str> {
+    let rest = path.strip_prefix('/')?;
+    let (candidate, remainder) = rest.split_once('/').unwrap_or((rest, ""));
+    if candidate != secret {
+        return None;
+    }
+    Some(match remainder {
+        "" => "/",
+        _ => &rest[candidate.len()..],
+    })
+}
+
 fn serve_connection(
     mut connection: TcpStream,
     upstream: &str,
+    secret: &str,
     adaptations: Adaptations,
     capture: Option<&Capture>,
 ) -> std::io::Result<()> {
@@ -367,7 +416,16 @@ fn serve_connection(
     }
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or_default().to_owned();
-    let path = parts.next().unwrap_or("/").to_owned();
+    let requested = parts.next().unwrap_or("/").to_owned();
+
+    // Refused before anything is read, forwarded or recorded, so an unexpected
+    // caller cannot reach the endpoint or put anything in the capture.
+    let Some(path) = without_secret(&requested, secret).map(str::to_owned) else {
+        let _ = connection
+            .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        let _ = connection.shutdown(Shutdown::Both);
+        return Ok(());
+    };
 
     let mut headers: Vec<(String, String)> = Vec::new();
     let mut content_length = 0usize;

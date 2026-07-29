@@ -107,6 +107,12 @@ already correct, there are simply too many. This flag folds them into one,
 preserving order and content, via a forwarder that runs on loopback for the
 duration of the scan.
 
+The forwarder is on loopback, which keeps other machines out but not other
+processes on this one, so each run's URL carries a secret first path segment.
+Without it a request is refused before anything is forwarded or recorded — a
+scan's forwarder is otherwise an unauthenticated relay to your endpoint for as
+long as it runs.
+
 ### If the sandbox cannot start
 
 Codex sandboxes the agent's shell commands with bubblewrap. Where that cannot
