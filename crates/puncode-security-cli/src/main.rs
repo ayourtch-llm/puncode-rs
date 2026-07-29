@@ -237,6 +237,7 @@ fn scan_once(options: &cli::ScanArgs) -> std::process::ExitCode {
         );
     }
 
+    let started = puncode_security::contract::utc_rfc3339_now();
     let cancellation = std::sync::Arc::new(puncode_security::api::ScanCancellation::new());
     let interrupted = commands::progress::install_interrupt_handler(&cancellation);
     // Progress is for a person; a structured report has no room for it.
@@ -260,6 +261,10 @@ fn scan_once(options: &cli::ScanArgs) -> std::process::ExitCode {
         report_partial_output(progress.scan_dir.as_deref());
         return std::process::ExitCode::from(signal.exit_code());
     }
+
+    // Written whatever the outcome: a scan that failed still produced
+    // artifacts someone may read, and how they were produced still matters.
+    record_provenance(options, progress.scan_dir.as_deref(), &started);
 
     match outcome {
         Ok(outcome) => {
@@ -343,6 +348,49 @@ fn bench(options: &cli::BenchArgs) -> std::process::ExitCode {
         eprintln!("puncode-security: {}", shortfall.describe());
     }
     std::process::ExitCode::from(exit::FINDINGS)
+}
+
+/// Writes down how this scan was produced, beside what it produced.
+///
+/// Best effort: a scan that ran is not undone by failing to describe itself, so
+/// a problem here is reported and nothing more.
+fn record_provenance(options: &cli::ScanArgs, scan_dir: Option<&std::path::Path>, started: &str) {
+    let Some(scan_dir) = scan_dir else { return };
+
+    let record = puncode_security::provenance::Provenance {
+        tool: "puncode-security".to_owned(),
+        tool_version: puncode_security::version::VERSION.to_owned(),
+        plugin_version: puncode_security::version::BUNDLED_PLUGIN_VERSION.to_owned(),
+        plugin_digest: puncode_security::runtime::bundled_plugin_root()
+            .ok()
+            .and_then(|root| std::fs::read_to_string(root.join(".unpacked")).ok())
+            .map(|digest| digest.trim().to_owned()),
+        model: options.model.clone(),
+        endpoint: options
+            .base_url
+            .as_deref()
+            .map(puncode_security::provenance::redact_endpoint),
+        wire_api: options.base_url.as_ref().map(|_| {
+            puncode_security::model_endpoint::WireApi::from(options.wire_api)
+                .as_str()
+                .to_owned()
+        }),
+        endpoint_adaptations: options
+            .endpoint_compat
+            .iter()
+            .map(|compat| match compat {
+                cli::EndpointCompat::MergeSystem => "merge-system".to_owned(),
+            })
+            .collect(),
+        sandbox_disabled: options.dangerously_disable_sandbox,
+        mode: format!("{:?}", options.mode).to_lowercase(),
+        started_at: started.to_owned(),
+        completed_at: puncode_security::contract::utc_rfc3339_now(),
+    };
+
+    if let Err(error) = record.write(scan_dir) {
+        eprintln!("puncode-security: could not record how this scan was produced: {error}");
+    }
 }
 
 /// Says where a stopped scan left what it had produced.

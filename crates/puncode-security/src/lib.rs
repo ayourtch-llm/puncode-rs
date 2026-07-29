@@ -20,6 +20,7 @@ pub mod knowledge_base;
 pub mod model_endpoint;
 pub mod models;
 pub mod multiscan;
+pub mod provenance;
 pub mod result;
 pub mod runtime;
 pub mod scan_comparison;

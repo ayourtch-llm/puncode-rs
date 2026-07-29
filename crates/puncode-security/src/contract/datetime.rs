@@ -233,7 +233,7 @@ pub(crate) fn civil_from_days(days: i64) -> (i64, u32, u32) {
 ///
 /// Matches the shape of JavaScript's `Date.prototype.toISOString`, which is
 /// what the plugin is given upstream.
-pub(crate) fn utc_rfc3339_now() -> String {
+pub fn utc_rfc3339_now() -> String {
     let elapsed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();

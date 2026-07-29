@@ -249,6 +249,35 @@ single vague report nor ten copies of the same one can inflate the score.
 Ground truth lives outside the fixtures, always: with the answers inside, an
 early run scored 2/2 and 3/3 and measured nothing at all.
 
+## Knowing how a scan was produced
+
+Every scan writes `provenance.json` beside its findings:
+
+```json
+{
+  "tool": "puncode-security", "toolVersion": "0.1.0",
+  "pluginVersion": "0.1.14", "pluginDigest": "d8fd28b6898c696f...",
+  "model": "…", "endpoint": "http://host:8080/v1", "wireApi": "responses",
+  "endpointAdaptations": ["merge-system"],
+  "sandboxDisabled": true,
+  "mode": "standard",
+  "startedAt": "…", "completedAt": "…"
+}
+```
+
+A `findings.json` says what was found and nothing about what found it. Handed
+one a month later, you could not tell which model produced it, whether it ran
+against a hosted service or a machine under a desk, or **whether the agent's
+commands were sandboxed at the time**. That last one bears directly on how much
+weight a report deserves, and it should not have to be guessed.
+
+The plugin digest is there because two scans naming one plugin version could
+still have run different code.
+
+Credentials are removed from the endpoint before it is recorded — a URL can
+carry a username and password, and a scan record is exactly the sort of file
+that gets attached to a ticket.
+
 ## Comparing runs
 
 ```sh

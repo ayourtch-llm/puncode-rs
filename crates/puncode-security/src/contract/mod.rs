@@ -32,6 +32,7 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 use crate::models::{CoverageDocument, FindingsDocument, ScanManifest};
 
+pub use datetime::utc_rfc3339_now;
 pub use expectation::ScanExpectation;
 
 use canonical::validate_canonical_contract;

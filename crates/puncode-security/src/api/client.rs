@@ -1492,6 +1492,27 @@ mod tests {
     /// a builtin writing down a pipe is block-buffered, so its output would not
     /// appear until the process exited, and the login would look silent for as
     /// long as it ran. The real `codex` flushes as it prints.
+    /// Retries past ETXTBSY.
+    ///
+    /// These tests write a stub executable and run it straight away. The kernel
+    /// refuses to exec a file still open for writing, and the close is not
+    /// always visible by the time the exec happens, so the failure appears at
+    /// random. A flaky test teaches its reader to re-run rather than look,
+    /// which costs more than the retry does.
+    fn retry_busy<T>(
+        mut attempt: impl FnMut() -> crate::error::Result<T>,
+    ) -> crate::error::Result<T> {
+        for _ in 0..100 {
+            match attempt() {
+                Err(error) if error.to_string().contains("Text file busy") => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                outcome => return outcome,
+            }
+        }
+        attempt()
+    }
+
     fn login_client(root: &Path, lines: &[&str]) -> PuncodeSecurity {
         use std::os::unix::fs::PermissionsExt;
         let codex = root.join("codex");
@@ -1524,7 +1545,7 @@ mod tests {
         let root = TempDir::new().expect("root");
         let client = login_client(root.path(), &["Open https://auth.openai.com/activate"]);
 
-        let handle = client.login_chatgpt().expect("the login starts");
+        let handle = retry_busy(|| client.login_chatgpt()).expect("the login starts");
 
         assert_eq!(
             handle.auth_url().as_deref(),
@@ -1541,9 +1562,7 @@ mod tests {
             &["Visit https://auth.openai.com/activate", "code: ABCD-1234"],
         );
 
-        let handle = client
-            .login_chatgpt_device_code()
-            .expect("the login starts");
+        let handle = retry_busy(|| client.login_chatgpt_device_code()).expect("the login starts");
 
         assert_eq!(
             handle.verification_url().as_deref(),
@@ -1559,7 +1578,7 @@ mod tests {
     fn closing_cancels_an_interactive_login() {
         let root = TempDir::new().expect("root");
         let client = login_client(root.path(), &["Open https://auth.openai.com/activate"]);
-        let handle = client.login_chatgpt().expect("the login starts");
+        let handle = retry_busy(|| client.login_chatgpt()).expect("the login starts");
 
         client.close().expect("closes");
 
@@ -1576,7 +1595,7 @@ mod tests {
         let client = login_client(root.path(), &["Open https://auth.openai.com/activate"]);
         client.close().expect("closes");
 
-        let error = client.login_chatgpt().expect_err("refused");
+        let error = retry_busy(|| client.login_chatgpt()).expect_err("refused");
 
         assert_eq!(error.to_string(), "PuncodeSecurity is closed.");
     }
