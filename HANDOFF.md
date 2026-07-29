@@ -109,6 +109,43 @@ digest logic, which would drift.
 - **Output may not live inside the scanned repository.** Fixtures live in this
   checkout, so the checkout is the protected root and results must go elsewhere.
 
+## Mutation testing: ground truth without a corpus author
+
+`mutation.rs`. Every other measurement here answers "how good is the scanner at
+flaws somebody thought to plant". A corpus only contains what its author
+imagined, and a score against it says nothing about anyone else's code.
+
+Mutation testing inverts it: start from code that is safe, break one protection
+in a known way, ask whether the scanner notices. **The ground truth is true by
+construction** — the difference between the two files is the flaw, and its
+location is where the edit was made.
+
+Three operators ship, applied to `inventory-service` (the control fixture, which
+the scanner has called clean in every run — so any mutant is a flaw in code it
+has already cleared). Each was confirmed **by attack**, against the mutant and
+the unmutated original:
+
+| Operator | Original | Mutant |
+|---|---|---|
+| `bind-to-concat` | injection payload returns nothing | returns the row |
+| `drop-validator` | `../../etc/passwd` refused | resolves outside `EXPORT_ROOT` |
+| `list-to-shell` | passed to gzip as a filename | the injected command ran |
+
+`cargo run -p puncode-security --example emit_mutants -- <file> <dir>`
+reproduces them, so the confirmations are checkable rather than quoted.
+
+**The limit, and it is the important part.** An operator swaps a safe idiom for
+an unsafe one; whether the result is reachable from untrusted input is not
+something reading one function can settle. A mutant is a **candidate** until
+confirmed, `confirmed_by` records how, and a test refuses to ship an operator
+without one. A mutant nobody has confirmed still measures something — a
+protection was removed and the scanner said nothing — but it must not be
+reported as a missed vulnerability, because it might not be one.
+
+**Deliberately not built**: a `mutate` subcommand, automatic scoring of mutants,
+operators for other languages. The library is the bounded piece; the rest is a
+project, not a beat.
+
 ## Two workbench databases exist, and only one is live
 
 `~/.codex/state/plugins/codex-security/workbench.sqlite3` holds the 79 scans

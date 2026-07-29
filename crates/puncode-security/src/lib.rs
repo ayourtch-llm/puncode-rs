@@ -23,6 +23,7 @@ pub mod manifest_form;
 pub mod model_endpoint;
 pub mod models;
 pub mod multiscan;
+pub mod mutation;
 pub mod provenance;
 pub mod result;
 pub mod runtime;
