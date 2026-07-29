@@ -221,7 +221,7 @@ impl OutputOptions {
     }
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Clone)]
 pub struct ScanArgs {
     /// Repository root to scan (default: current directory).
     pub repository: Option<PathBuf>,
@@ -328,6 +328,13 @@ pub struct ScanArgs {
     /// Report what would run without scanning.
     #[arg(long)]
     pub dry_run: bool,
+    /// Scan N times and report how much the runs agreed.
+    ///
+    /// Runs are sequential, so this costs N times a single scan. A scan is not
+    /// repeatable: findings, wording and severities all move between runs, and
+    /// one report cannot show which of its findings would survive a second look.
+    #[arg(long, value_name = "N", default_value_t = 1, requires = "output_dir")]
+    pub repeat: usize,
     #[command(flatten)]
     pub output: OutputOptions,
     /// The scan this one repeats, when it was rebuilt from a saved recipe.

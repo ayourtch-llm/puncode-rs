@@ -116,6 +116,9 @@ pub fn scan_arguments(recipe: Option<&Value>, parent_scan_id: &str) -> Result<Sc
         // Never revived from a saved recipe: disabling the sandbox is a
         // decision for the run in front of you, not one to inherit silently.
         dangerously_disable_sandbox: false,
+        // A rerun repeats one scan; repeating it N times is a decision for the
+        // run in front of you, not one to inherit.
+        repeat: 1,
         wire_api: crate::cli::WireApi::default(),
         api_key_env: "OPENAI_API_KEY".to_owned(),
         repository: Some(repository.into()),

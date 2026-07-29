@@ -730,3 +730,38 @@ fn warns_when_the_sandbox_is_turned_off() {
 fn accepts_yolo_as_the_short_name() {
     parses_scan(&["scan", ".", "--yolo"]);
 }
+
+/// Repeating writes each run to its own directory, which the workbench requires
+/// and which the caller therefore has to name.
+#[test]
+fn repeating_requires_somewhere_to_put_the_runs() {
+    let (code, _, complaint) = run(&["scan", ".", "--repeat", "3"]);
+
+    assert_eq!(code, Some(2), "{complaint}");
+    assert!(complaint.contains("--output-dir"), "{complaint}");
+}
+
+/// One run is the default, so nothing changes for anyone not asking for more.
+#[test]
+fn one_run_is_the_default() {
+    parses_scan(&["scan", "."]);
+}
+
+#[test]
+fn accepts_a_repeat_count_with_an_output_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temporary = tempfile::tempdir().expect("a directory");
+    // Scan output must not be readable by other users; it carries source.
+    std::fs::set_permissions(temporary.path(), std::fs::Permissions::from_mode(0o700))
+        .expect("chmod");
+
+    parses_scan(&[
+        "scan",
+        ".",
+        "--repeat",
+        "2",
+        "--output-dir",
+        &temporary.path().to_string_lossy(),
+    ]);
+}

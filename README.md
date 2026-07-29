@@ -251,6 +251,22 @@ early run scored 2/2 and 3/3 and measured nothing at all.
 
 ## Comparing runs
 
+```sh
+puncode-security scan . --repeat 3 --output-dir ./scans
+```
+
+Runs three scans, one after another, into `scans/run-1..run-3`, then reports how
+much they agreed. It says up front that this costs three times a single scan,
+because that should not be discovered afterwards. Runs are sequential: several
+at once against one endpoint contend, and the point is to see the model's own
+variation rather than the effects of load.
+
+A run that fails is named and the rest are still compared — a partial answer
+beats none. The exit code reflects the findings, not the agreement: a finding
+seen once is still a finding.
+
+The same comparison is available over scans you already have:
+
 Scan the same code twice and you will not get the same answer. Findings appear
 and vanish, severities move, and one flaw arrives under three different titles.
 A reviewer reading a single report cannot tell which findings would survive a

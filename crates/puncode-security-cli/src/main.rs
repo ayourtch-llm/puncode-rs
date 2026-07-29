@@ -139,7 +139,93 @@ fn login(options: &cli::LoginArgs) -> std::process::ExitCode {
 /// The report goes to standard output and everything else to standard error,
 /// so a redirected report stays parseable. The exit code is what a CI job acts
 /// on, so it is returned rather than folded into the usual success path.
+/// Runs a scan, or several, reporting how much repeated runs agreed.
+///
+/// Repeats are sequential. Several scans at once against one endpoint contend
+/// with each other, and the point of repeating is to see the model's own
+/// variation rather than the effects of load.
 fn scan(options: &cli::ScanArgs) -> std::process::ExitCode {
+    if options.repeat <= 1 {
+        return scan_once(options);
+    }
+
+    let Some(base) = &options.output_dir else {
+        eprintln!("puncode-security: --repeat needs --output-dir.");
+        return std::process::ExitCode::from(exit::ERROR);
+    };
+
+    // Said before anything is spent, not discovered afterwards.
+    eprintln!(
+        "puncode-security: running {} scans, one after another. This costs {} times a single \
+         scan.",
+        options.repeat, options.repeat
+    );
+
+    let mut directories = Vec::new();
+    let mut worst = exit::SUCCESS;
+    let mut failed = Vec::new();
+
+    for run in 1..=options.repeat {
+        // One scan per output directory is a workbench rule, so each run needs
+        // its own.
+        let directory = std::path::Path::new(base).join(format!("run-{run}"));
+        eprintln!("puncode-security: run {run} of {}", options.repeat);
+
+        let mut once = options.clone();
+        once.output_dir = Some(directory.to_string_lossy().into_owned());
+        once.repeat = 1;
+
+        let code = scan_once(&once);
+        // A run that failed is named rather than swallowed; the rest are still
+        // worth comparing, and a partial answer beats none.
+        if code != std::process::ExitCode::from(exit::SUCCESS) {
+            failed.push(run);
+        }
+        if directory.join("findings.json").is_file() {
+            directories.push(directory);
+        }
+        worst = worst.max(run_severity(&code));
+    }
+
+    if !failed.is_empty() {
+        eprintln!(
+            "puncode-security: {} of {} runs did not finish cleanly: {}",
+            failed.len(),
+            options.repeat,
+            failed
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
+    if directories.len() < 2 {
+        eprintln!("puncode-security: too few runs produced findings to compare.");
+        return std::process::ExitCode::from(worst);
+    }
+
+    match commands::consensus::run(&directories, None, false) {
+        Ok(report) => println!("{report}"),
+        Err(problem) => eprintln!("puncode-security: {problem}"),
+    }
+    std::process::ExitCode::from(worst)
+}
+
+/// The exit code as a number, for comparing runs.
+///
+/// `ExitCode` cannot be inspected, so severity is tracked alongside it.
+fn run_severity(code: &std::process::ExitCode) -> u8 {
+    if *code == std::process::ExitCode::from(exit::SUCCESS) {
+        exit::SUCCESS
+    } else if *code == std::process::ExitCode::from(exit::FINDINGS) {
+        exit::FINDINGS
+    } else {
+        exit::ERROR
+    }
+}
+
+fn scan_once(options: &cli::ScanArgs) -> std::process::ExitCode {
     use std::io::IsTerminal;
 
     if options.dangerously_disable_sandbox {
