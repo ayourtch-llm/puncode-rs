@@ -9,7 +9,7 @@ use std::path::Path;
 
 use puncode_security::benchmark::{
     BenchmarkReport, Comparison, GroundTruth, ReportedFinding, ReportedLocation, Shortfall,
-    Thresholds, compare, score_fixture,
+    Thresholds, compare, deferrals_from_coverage, score_fixture_with_deferrals,
 };
 use serde_json::Value;
 
@@ -33,7 +33,15 @@ pub fn run(ground_truth: &Path, results: &Path, corpus_root: &Path) -> Result<Re
             continue;
         };
         let findings = parse_findings(&body, corpus_root, &fixture.path)?;
-        scores.push(score_fixture(fixture, &findings));
+        // Absent is ordinary: a scan made by another tool has no coverage
+        // document, and one that is unreadable is not a reason to refuse to
+        // score the findings. Either way the result is fewer deferrals known,
+        // which shows up as "never noticed" rather than as a silent pass.
+        let deferrals = std::fs::read_to_string(results.join(&fixture.name).join("coverage.json"))
+            .ok()
+            .and_then(|body| deferrals_from_coverage(&body).ok())
+            .unwrap_or_default();
+        scores.push(score_fixture_with_deferrals(fixture, &findings, &deferrals));
     }
 
     Ok(Report {
@@ -129,8 +137,14 @@ pub fn render_json(outcome: &Report, shortfalls: &[Shortfall]) -> String {
                 "planted": score.planted(),
                 "found": score.found(),
                 "missed": score.missed(),
+                "neverNoticed": score.never_noticed(),
+                "deferred": score.deferred().into_iter().map(|(id, deferral)| {
+                    serde_json::json!({ "flaw": id, "reason": deferral.reason })
+                }).collect::<Vec<_>>(),
                 "unmatched": score.unmatched,
                 "decoysTripped": score.decoys_tripped,
+                "decoysDeferred": score.decoys_deferred,
+                "unattributedDeferrals": score.unattributed_deferrals,
             })
         })
         .collect();
@@ -152,6 +166,11 @@ pub fn render_json(outcome: &Report, shortfalls: &[Shortfall]) -> String {
         "planted": report.planted(),
         "found": report.found(),
         "falsePositives": report.false_positives(),
+        // Kept apart from the rate on purpose: a deferral is not a detection,
+        // and a scanner that explained every flaw away would still score zero.
+        "neverNoticed": report.never_noticed(),
+        "deferred": report.deferred(),
+        "unattributedDeferrals": report.unattributed_deferrals(),
         "controlFalsePositives": report.control_false_positives(),
         "fixtures": fixtures,
         "byClass": by_class,
@@ -169,6 +188,20 @@ pub fn render_json(outcome: &Report, shortfalls: &[Shortfall]) -> String {
         "shortfalls": shortfalls.iter().map(Shortfall::describe).collect::<Vec<_>>(),
     }))
     .unwrap_or_else(|error| format!("{{\"error\":\"{error}\"}}"))
+}
+
+/// A deferral's reasoning, short enough to read in a table.
+///
+/// Truncation announces itself, because a reason cut off mid-sentence can read
+/// as the opposite of what it said.
+fn trim_reason(reason: &str) -> String {
+    const LIMIT: usize = 96;
+    let flat = reason.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= LIMIT {
+        return flat;
+    }
+    let kept: String = flat.chars().take(LIMIT).collect();
+    format!("{kept}… (cut; full text in coverage.json)")
 }
 
 /// Every way the run fell short of what was asked of it.
@@ -264,20 +297,38 @@ pub fn render(outcome: &Report) -> String {
                 score.fixture,
                 score.unmatched.len()
             ));
+            if !score.decoys_deferred.is_empty() {
+                // The good outcome, and invisible without saying it: the scan
+                // looked at code written to fool it and stopped short.
+                lines.push(format!(
+                    "  {:<20} nearly fooled, then stopped short: {}",
+                    "",
+                    score.decoys_deferred.join(", ")
+                ));
+            }
             continue;
         }
-        let missed = score.missed();
+        let never = score.never_noticed();
         lines.push(format!(
             "  {:<20} {} of {} found{}",
             score.fixture,
             score.found(),
             score.planted(),
-            if missed.is_empty() {
+            if never.is_empty() {
                 String::new()
             } else {
-                format!("   missed: {}", missed.join(", "))
+                format!("   never noticed: {}", never.join(", "))
             }
         ));
+        for (id, deferral) in score.deferred() {
+            // Deliberately not folded in with the misses. The scan reported
+            // neither, but one of them it had never seen and the other it
+            // looked at and argued about, and those call for different repairs.
+            lines.push(format!("  {:<20} set aside, not reported: {id}", ""));
+            if let Some(reason) = &deferral.reason {
+                lines.push(format!("  {:<20}   \"{}\"", "", trim_reason(reason)));
+            }
+        }
     }
 
     lines.push(String::new());
@@ -296,6 +347,24 @@ pub fn render(outcome: &Report) -> String {
         report.false_positives(),
         report.control_false_positives()
     ));
+    if report.deferred() > 0 || report.never_noticed() > 0 {
+        // The split that the detection rate cannot express. A blind spot needs
+        // a better scanner; a deferral needs someone to read the reasoning and
+        // agree or not.
+        lines.push(format!(
+            "  not reported   {} never noticed, {} seen and set aside",
+            report.never_noticed(),
+            report.deferred()
+        ));
+    }
+    if report.unattributed_deferrals() > 0 {
+        // Said rather than dropped: scoring that quietly discards what it
+        // cannot place looks more complete than it is.
+        lines.push(format!(
+            "  unaccounted    {} deferral(s) the corpus could not place",
+            report.unattributed_deferrals()
+        ));
+    }
 
     // Reported as agreement, never as accuracy. Severity is a judgement, and
     // the corpus is one opinion about it.
@@ -454,5 +523,117 @@ mod tests {
 
         assert!(rendered.contains("not measured"), "{rendered}");
         assert!(!rendered.contains("0%"), "{rendered}");
+    }
+
+    /// The two runs that both scored 88% were not the same result, and the
+    /// report has to say so.
+    #[test]
+    fn distinguishes_a_blind_spot_from_a_judgement() {
+        let results = tempfile::tempdir().expect("a directory");
+        let fixture = results.path().join("node-traversal");
+        std::fs::create_dir_all(&fixture).expect("creates");
+        std::fs::write(
+            fixture.join("findings.json"),
+            json!({ "findings": [
+                { "title": "Traversal", "locations": [{ "path": "src/server.js", "startLine": 12 }] },
+                { "title": "SSRF", "locations": [{ "path": "src/server.js", "startLine": 22 }] },
+            ]})
+            .to_string(),
+        )
+        .expect("writes");
+
+        // First without a coverage document: nothing says the third was seen.
+        let blind = run(
+            &corpus_dir().join("benchmark/ground-truth.json"),
+            results.path(),
+            &corpus_dir(),
+        )
+        .expect("runs");
+        let rendered = render(&blind);
+        assert!(
+            rendered.contains("never noticed: timing-unsafe-compare"),
+            "{rendered}"
+        );
+
+        // Then with the coverage document that run actually wrote.
+        std::fs::copy(
+            corpus_dir().join("crates/puncode-security/tests/data/coverage-node-traversal.json"),
+            fixture.join("coverage.json"),
+        )
+        .expect("copies");
+        let judged = run(
+            &corpus_dir().join("benchmark/ground-truth.json"),
+            results.path(),
+            &corpus_dir(),
+        )
+        .expect("runs");
+        let rendered = render(&judged);
+
+        assert!(
+            rendered.contains("set aside, not reported: timing-unsafe-compare"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("environment variable"), "{rendered}");
+        assert!(
+            rendered.contains("0 never noticed, 1 seen and set aside"),
+            "{rendered}"
+        );
+        // And the rate is unchanged: a deferral is not a detection.
+        assert_eq!(
+            blind.report.detection_rate(),
+            judged.report.detection_rate()
+        );
+        assert_eq!(judged.report.found(), 2);
+    }
+
+    /// An unreadable coverage document must not stop the findings being scored.
+    #[test]
+    fn scores_findings_even_when_the_coverage_document_is_broken() {
+        let results = tempfile::tempdir().expect("a directory");
+        let fixture = results.path().join("flask-injection");
+        std::fs::create_dir_all(&fixture).expect("creates");
+        std::fs::write(
+            fixture.join("findings.json"),
+            json!({ "findings": [
+                { "title": "SQLi", "locations": [{ "path": "src/app.py", "startLine": 10 }] },
+            ]})
+            .to_string(),
+        )
+        .expect("writes");
+        std::fs::write(fixture.join("coverage.json"), "{ not json").expect("writes");
+
+        let outcome = run(
+            &corpus_dir().join("benchmark/ground-truth.json"),
+            results.path(),
+            &corpus_dir(),
+        )
+        .expect("runs");
+
+        assert_eq!(outcome.report.found(), 1);
+        // With nothing readable to say otherwise, the other flaw is a blind
+        // spot rather than a judgement. Erring that way is the honest default.
+        assert_eq!(outcome.report.never_noticed(), 1);
+        assert_eq!(outcome.report.deferred(), 0);
+    }
+
+    /// Truncation has to announce itself: a reason cut mid-sentence can read as
+    /// the opposite of what it said.
+    #[test]
+    fn a_cut_reason_says_it_was_cut() {
+        let long = "safe because ".repeat(40);
+
+        let trimmed = trim_reason(&long);
+
+        assert!(trimmed.contains("cut"), "{trimmed}");
+        assert!(trimmed.contains("coverage.json"), "{trimmed}");
+        assert!(trimmed.len() < long.len());
+    }
+
+    #[test]
+    fn a_short_reason_is_left_alone() {
+        assert_eq!(
+            trim_reason("token comes from the environment"),
+            "token comes from the environment"
+        );
     }
 }

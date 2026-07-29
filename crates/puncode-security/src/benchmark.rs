@@ -63,6 +63,36 @@ pub struct Decoy {
     pub safe_because: Option<String>,
 }
 
+/// Where a deferral points.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeferredSpan {
+    pub file: String,
+    /// Inclusive first and last line.
+    pub lines: (u32, u32),
+}
+
+/// Something a scan looked at, judged, and consciously set aside.
+///
+/// This is neither a finding nor a miss, and collapsing it into either loses
+/// the fact that matters most. A scanner that never noticed a flaw has a blind
+/// spot; one that noticed it and wrote down why it was not reporting it has
+/// made a judgement you can read and disagree with. The first needs a better
+/// scanner and the second needs a conversation, so a score that shows only
+/// "not found" points at the wrong repair.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Deferral {
+    pub id: String,
+    /// Why the scan set it aside, in its own words.
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// Files the deferral names, without lines.
+    #[serde(default)]
+    pub paths: Vec<String>,
+    /// Where it points, when the scan said precisely enough.
+    #[serde(default)]
+    pub spans: Vec<DeferredSpan>,
+}
+
 /// One fixture and everything planted in it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fixture {
@@ -126,6 +156,14 @@ pub struct FlawOutcome {
     pub expected_severity: Option<String>,
     /// What the scan called it.
     pub reported_severity: Option<String>,
+    /// The deferral covering this flaw, when the scan set it aside instead of
+    /// reporting it.
+    ///
+    /// Only ever set on a flaw that was not found: a reported flaw needs no
+    /// excuse. Detection deliberately does not count these — the scan did not
+    /// report it, and a rate that credited deferrals would let a scanner reach
+    /// a hundred percent by explaining every flaw away.
+    pub deferred_as: Option<Deferral>,
 }
 
 impl FlawOutcome {
@@ -148,6 +186,21 @@ impl FlawOutcome {
     pub fn found(&self) -> bool {
         self.found_as.is_some()
     }
+
+    /// Whether the scan saw this and set it aside rather than reporting it.
+    #[must_use]
+    pub fn deferred(&self) -> bool {
+        self.deferred_as.is_some()
+    }
+
+    /// Whether the scan gave no sign of having seen this at all.
+    ///
+    /// The number worth watching. Everything else is a judgement that can be
+    /// argued with; this is a blind spot.
+    #[must_use]
+    pub fn never_noticed(&self) -> bool {
+        !self.found() && !self.deferred()
+    }
 }
 
 /// How a scan did against one fixture.
@@ -167,6 +220,19 @@ pub struct FixtureScore {
     /// dangerous is a different failure from inventing something out of thin
     /// air, and says more about how a scanner will behave on real code.
     pub decoys_tripped: Vec<String>,
+    /// Deferrals that could not be tied to anything planted, by deferral id.
+    ///
+    /// Said rather than dropped. A deferral the corpus cannot place is not
+    /// evidence of anything, and silently discarding it would let the scoring
+    /// look more complete than it is.
+    pub unattributed_deferrals: Vec<String>,
+    /// Decoys the scan set aside rather than reporting, by decoy id.
+    ///
+    /// A near miss, and the most encouraging thing in a report: the scan looked
+    /// at code written to fool it, suspected something, and stopped short of
+    /// claiming it. Worth seeing, because the same code under a different model
+    /// is where a false positive comes from.
+    pub decoys_deferred: Vec<String>,
 }
 
 impl FixtureScore {
@@ -191,6 +257,25 @@ impl FixtureScore {
             .map(|outcome| outcome.flaw_id.as_str())
             .collect()
     }
+
+    /// Flaws the scan saw and set aside, with why.
+    #[must_use]
+    pub fn deferred(&self) -> Vec<(&str, &Deferral)> {
+        self.outcomes
+            .iter()
+            .filter_map(|outcome| Some((outcome.flaw_id.as_str(), outcome.deferred_as.as_ref()?)))
+            .collect()
+    }
+
+    /// Flaws the scan gave no sign of having seen.
+    #[must_use]
+    pub fn never_noticed(&self) -> Vec<&str> {
+        self.outcomes
+            .iter()
+            .filter(|outcome| outcome.never_noticed())
+            .map(|outcome| outcome.flaw_id.as_str())
+            .collect()
+    }
 }
 
 /// Scores one fixture's findings against what was planted in it.
@@ -200,7 +285,22 @@ impl FixtureScore {
 /// on one line can inflate the result.
 #[must_use]
 pub fn score_fixture(fixture: &Fixture, findings: &[ReportedFinding]) -> FixtureScore {
+    score_fixture_with_deferrals(fixture, findings, &[])
+}
+
+/// The same, also accounting for what the scan set aside.
+///
+/// A deferral is attributed to at most one flaw and a flaw takes at most one
+/// deferral, on the same reasoning as findings: neither should be able to cover
+/// the corpus by being vague.
+#[must_use]
+pub fn score_fixture_with_deferrals(
+    fixture: &Fixture,
+    findings: &[ReportedFinding],
+    deferrals: &[Deferral],
+) -> FixtureScore {
     let mut claimed: Vec<bool> = vec![false; findings.len()];
+    let mut taken: Vec<bool> = vec![false; deferrals.len()];
     let mut outcomes = Vec::with_capacity(fixture.flaws.len());
 
     for flaw in &fixture.flaws {
@@ -215,12 +315,28 @@ pub fn score_fixture(fixture: &Fixture, findings: &[ReportedFinding]) -> Fixture
             }
             None => (None, None),
         };
+        // Only looked for when the flaw was not reported. A found flaw needs no
+        // excuse, and letting a deferral attach to one would double-count it.
+        let deferred_as = if found_as.is_some() {
+            None
+        } else {
+            deferrals
+                .iter()
+                .enumerate()
+                .find(|(index, deferral)| !taken[*index] && covers(deferral, flaw, fixture))
+                .map(|(index, deferral)| {
+                    taken[index] = true;
+                    deferral.clone()
+                })
+        };
+
         outcomes.push(FlawOutcome {
             flaw_id: flaw.id.clone(),
             cwe: flaw.cwe.clone(),
             found_as,
             expected_severity: flaw.severity.clone(),
             reported_severity,
+            deferred_as,
         });
     }
 
@@ -246,13 +362,79 @@ pub fn score_fixture(fixture: &Fixture, findings: &[ReportedFinding]) -> Fixture
         .map(|decoy| decoy.id.clone())
         .collect();
 
+    // A deferral landing on safe code written to look dangerous. The scan
+    // suspected it and stopped short, which is the outcome to want there.
+    let decoys_deferred = fixture
+        .decoys
+        .iter()
+        .filter(|decoy| {
+            deferrals
+                .iter()
+                .enumerate()
+                .any(|(index, deferral)| !taken[index] && touches_decoy(deferral, decoy))
+        })
+        .map(|decoy| decoy.id.clone())
+        .collect();
+
+    let unattributed_deferrals = deferrals
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !taken[*index])
+        .map(|(_, deferral)| deferral.id.clone())
+        .collect();
+
     FixtureScore {
         fixture: fixture.name.clone(),
         control: fixture.control,
         outcomes,
         unmatched,
         decoys_tripped,
+        unattributed_deferrals,
+        decoys_deferred,
     }
+}
+
+/// Whether a deferral points at where a flaw was planted.
+///
+/// Precise spans decide it when the scan gave them. When it named only a file,
+/// the deferral is attributed **only if that file holds exactly one planted
+/// flaw** — otherwise one vague deferral over a file with three flaws in it
+/// would be credited against whichever came first, which is not evidence that
+/// the scan saw that one.
+fn covers(deferral: &Deferral, flaw: &PlantedFlaw, fixture: &Fixture) -> bool {
+    if !deferral.spans.is_empty() {
+        return deferral
+            .spans
+            .iter()
+            .any(|span| same_file(&span.file, &flaw.file) && overlaps(span.lines, flaw.lines));
+    }
+    let alone = fixture
+        .flaws
+        .iter()
+        .filter(|other| same_file(&other.file, &flaw.file))
+        .count()
+        == 1;
+    alone
+        && deferral
+            .paths
+            .iter()
+            .any(|path| same_file(path, &flaw.file))
+}
+
+/// Whether a deferral points at a decoy. Spans only: a file-wide deferral says
+/// nothing about one routine in it.
+fn touches_decoy(deferral: &Deferral, decoy: &Decoy) -> bool {
+    deferral
+        .spans
+        .iter()
+        .any(|span| same_file(&span.file, &decoy.file) && overlaps(span.lines, decoy.lines))
+}
+
+/// Whether two line ranges are close enough to be the same code.
+fn overlaps(span: (u32, u32), planted: (u32, u32)) -> bool {
+    within_tolerance(span.0, planted)
+        || within_tolerance(span.1, planted)
+        || (span.0 <= planted.0 && span.1 >= planted.1)
 }
 
 /// Whether a finding points at a decoy.
@@ -291,6 +473,140 @@ fn same_file(reported: &str, planted: &str) -> bool {
 fn within_tolerance(line: u32, planted: (u32, u32)) -> bool {
     let (first, last) = planted;
     line + LINE_TOLERANCE >= first && line <= last.saturating_add(LINE_TOLERANCE)
+}
+
+/// Reads what a scan set aside, from its coverage document.
+///
+/// Two places record it and this reads both. `deferred[]` is the explicit list;
+/// `surfaces[]` carries a disposition, and a scan may mark a surface for follow
+/// up without writing a matching deferral. Trusting one of them would make the
+/// result depend on which convention a given run happened to use, so both are
+/// read and the surface ids deduplicate them.
+///
+/// Line numbers come from surface labels, which the plugin writes as
+/// `path:first-last (what it is)`. When a label does not carry a range the
+/// deferral keeps only its paths, and scoring is correspondingly cautious.
+pub fn deferrals_from_coverage(text: &str) -> Result<Vec<Deferral>, String> {
+    let document: serde_json::Value = serde_json::from_str(text)
+        .map_err(|error| format!("coverage document is not usable: {error}"))?;
+
+    let surfaces = document
+        .get("surfaces")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let span_of = |id: &str| -> Option<DeferredSpan> {
+        surfaces
+            .iter()
+            .find(|surface| surface.get("id").and_then(serde_json::Value::as_str) == Some(id))
+            .and_then(|surface| surface.get("label"))
+            .and_then(serde_json::Value::as_str)
+            .and_then(span_from_label)
+    };
+
+    let mut deferrals = Vec::new();
+    let mut seen_surfaces: Vec<String> = Vec::new();
+
+    for item in document
+        .get("deferred")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let ids: Vec<String> = item
+            .get("surfaceIds")
+            .and_then(serde_json::Value::as_array)
+            .map(|found| {
+                found
+                    .iter()
+                    .filter_map(|id| id.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let spans: Vec<DeferredSpan> = ids.iter().filter_map(|id| span_of(id)).collect();
+        seen_surfaces.extend(ids);
+        deferrals.push(Deferral {
+            id: item
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("(unnamed)")
+                .to_owned(),
+            reason: item
+                .get("reason")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            paths: item
+                .get("paths")
+                .and_then(serde_json::Value::as_array)
+                .map(|found| {
+                    found
+                        .iter()
+                        .filter_map(|path| path.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            spans,
+        });
+    }
+
+    for surface in &surfaces {
+        let Some(id) = surface.get("id").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        if seen_surfaces.iter().any(|seen| seen == id) {
+            continue;
+        }
+        let disposition = surface
+            .get("disposition")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if !matches!(disposition, "needs_follow_up" | "deferred") {
+            continue;
+        }
+        let label = surface
+            .get("label")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let span = span_from_label(label);
+        deferrals.push(Deferral {
+            id: id.to_owned(),
+            reason: surface
+                .get("notes")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            paths: span.iter().map(|span| span.file.clone()).collect(),
+            spans: span.into_iter().collect(),
+        });
+    }
+
+    Ok(deferrals)
+}
+
+/// Pulls `path:first-last` out of a surface label.
+///
+/// Returns nothing rather than guessing when the label is prose. A wrong span
+/// would attribute a deferral to a flaw the scan never looked at, which is the
+/// one error this whole distinction exists to avoid.
+fn span_from_label(label: &str) -> Option<DeferredSpan> {
+    let head = label.split_whitespace().next()?;
+    let (file, range) = head.rsplit_once(':')?;
+    if file.is_empty() {
+        return None;
+    }
+    let (first, last) = match range.split_once('-') {
+        Some((first, last)) => (first.parse().ok()?, last.parse().ok()?),
+        None => {
+            let only: u32 = range.parse().ok()?;
+            (only, only)
+        }
+    };
+    if first > last {
+        return None;
+    }
+    Some(DeferredSpan {
+        file: file.to_owned(),
+        lines: (first, last),
+    })
 }
 
 /// The whole corpus scored together.
@@ -353,6 +669,48 @@ impl BenchmarkReport {
                 ))
             })
             .collect()
+    }
+
+    /// Flaws the scan saw and set aside, anywhere in the corpus.
+    ///
+    /// Not counted as found. Reported because the aggregate rate cannot tell a
+    /// blind spot from a judgement, and only one of those is fixed by a better
+    /// scanner.
+    #[must_use]
+    pub fn deferred(&self) -> usize {
+        self.scores
+            .iter()
+            .flat_map(|score| &score.outcomes)
+            .filter(|outcome| outcome.deferred())
+            .count()
+    }
+
+    /// Flaws the scan gave no sign of having seen.
+    #[must_use]
+    pub fn never_noticed(&self) -> usize {
+        self.scores
+            .iter()
+            .flat_map(|score| &score.outcomes)
+            .filter(|outcome| outcome.never_noticed())
+            .count()
+    }
+
+    /// Decoys the scan set aside rather than reporting, anywhere in the corpus.
+    #[must_use]
+    pub fn decoys_deferred(&self) -> Vec<&str> {
+        self.scores
+            .iter()
+            .flat_map(|score| score.decoys_deferred.iter().map(String::as_str))
+            .collect()
+    }
+
+    /// Deferrals nothing in the corpus could account for.
+    #[must_use]
+    pub fn unattributed_deferrals(&self) -> usize {
+        self.scores
+            .iter()
+            .map(|score| score.unattributed_deferrals.len())
+            .sum()
     }
 
     /// Decoys tripped anywhere in the corpus.
@@ -880,6 +1238,7 @@ mod threshold_tests {
                 found_as: (index < found).then(|| "found".to_owned()),
                 expected_severity: None,
                 reported_severity: None,
+                deferred_as: None,
             })
             .collect();
         BenchmarkReport {
@@ -889,6 +1248,8 @@ mod threshold_tests {
                 outcomes,
                 unmatched: (0..unmatched).map(|i| format!("noise {i}")).collect(),
                 decoys_tripped: Vec::new(),
+                unattributed_deferrals: Vec::new(),
+                decoys_deferred: Vec::new(),
             }],
         }
     }
@@ -1227,10 +1588,13 @@ mod comparison_tests {
                         found_as: found.then(|| "found".to_owned()),
                         expected_severity: None,
                         reported_severity: severity.map(str::to_owned),
+                        deferred_as: None,
                     })
                     .collect(),
                 unmatched: Vec::new(),
                 decoys_tripped: Vec::new(),
+                unattributed_deferrals: Vec::new(),
+                decoys_deferred: Vec::new(),
             }],
         }
     }
@@ -1307,5 +1671,393 @@ mod comparison_tests {
         let comparison = compare(&run, &run);
 
         assert_eq!(comparison, Comparison::default());
+    }
+}
+
+#[cfg(test)]
+mod deferral_tests {
+    use super::*;
+
+    fn flaw(id: &str, file: &str, first: u32, last: u32) -> PlantedFlaw {
+        PlantedFlaw {
+            id: id.to_owned(),
+            file: file.to_owned(),
+            lines: (first, last),
+            cwe: None,
+            severity: None,
+            summary: None,
+        }
+    }
+
+    fn fixture(flaws: Vec<PlantedFlaw>) -> Fixture {
+        Fixture {
+            name: "f".to_owned(),
+            path: "fixtures/f".to_owned(),
+            language: None,
+            flaws,
+            control: false,
+            decoys: Vec::new(),
+        }
+    }
+
+    fn deferral(id: &str, file: &str, first: u32, last: u32) -> Deferral {
+        Deferral {
+            id: id.to_owned(),
+            reason: Some("wanted deployment context".to_owned()),
+            paths: vec![file.to_owned()],
+            spans: vec![DeferredSpan {
+                file: file.to_owned(),
+                lines: (first, last),
+            }],
+        }
+    }
+
+    /// The distinction the whole feature exists for.
+    #[test]
+    fn a_flaw_the_scan_set_aside_is_not_a_flaw_it_never_saw() {
+        let corpus = fixture(vec![flaw("timing", "src/server.js", 35, 35)]);
+
+        let score = score_fixture_with_deferrals(
+            &corpus,
+            &[],
+            &[deferral("candidate-1", "src/server.js", 28, 33)],
+        );
+
+        assert!(!score.outcomes[0].found(), "a deferral is not a finding");
+        assert!(score.outcomes[0].deferred());
+        assert!(!score.outcomes[0].never_noticed());
+        assert_eq!(score.never_noticed(), Vec::<&str>::new());
+    }
+
+    /// Detection must stay the share that was *reported*. Crediting deferrals
+    /// would let a scan reach a hundred percent by explaining every flaw away.
+    #[test]
+    fn deferring_everything_does_not_raise_detection() {
+        let corpus = fixture(vec![flaw("timing", "src/server.js", 35, 35)]);
+
+        let score = score_fixture_with_deferrals(
+            &corpus,
+            &[],
+            &[deferral("candidate-1", "src/server.js", 28, 33)],
+        );
+        let report = BenchmarkReport {
+            scores: vec![score],
+        };
+
+        assert_eq!(report.found(), 0);
+        assert_eq!(report.detection_rate(), Some(0.0));
+        assert_eq!(report.deferred(), 1);
+    }
+
+    /// A flaw that was reported takes no excuse, even if a deferral sits on it.
+    #[test]
+    fn a_reported_flaw_is_not_also_recorded_as_deferred() {
+        let corpus = fixture(vec![flaw("timing", "src/server.js", 35, 35)]);
+        let finding = ReportedFinding {
+            title: "Timing attack".to_owned(),
+            severity: None,
+            locations: vec![ReportedLocation {
+                file: "src/server.js".to_owned(),
+                line: 35,
+            }],
+        };
+
+        let score = score_fixture_with_deferrals(
+            &corpus,
+            &[finding],
+            &[deferral("candidate-1", "src/server.js", 35, 35)],
+        );
+
+        assert!(score.outcomes[0].found());
+        assert!(!score.outcomes[0].deferred());
+        // And the deferral is said to be unaccounted for rather than dropped.
+        assert_eq!(score.unattributed_deferrals, vec!["candidate-1"]);
+    }
+
+    /// One vague deferral must not cover a file full of flaws.
+    #[test]
+    fn a_file_wide_deferral_is_not_credited_when_the_file_holds_several_flaws() {
+        let corpus = fixture(vec![
+            flaw("overflow", "src/store.c", 23, 23),
+            flaw("use-after-free", "src/store.c", 33, 36),
+            flaw("off-by-one", "src/store.c", 54, 54),
+        ]);
+        let vague = Deferral {
+            id: "candidate-1".to_owned(),
+            reason: None,
+            paths: vec!["src/store.c".to_owned()],
+            spans: Vec::new(),
+        };
+
+        let score = score_fixture_with_deferrals(&corpus, &[], &[vague]);
+
+        assert_eq!(score.never_noticed().len(), 3);
+        assert_eq!(score.unattributed_deferrals, vec!["candidate-1"]);
+    }
+
+    /// When there is only one flaw in the file there is no ambiguity to guard
+    /// against, so a file-wide deferral does count.
+    #[test]
+    fn a_file_wide_deferral_counts_when_the_file_holds_one_flaw() {
+        let corpus = fixture(vec![flaw("timing", "src/server.js", 35, 35)]);
+        let vague = Deferral {
+            id: "candidate-1".to_owned(),
+            reason: None,
+            paths: vec!["src/server.js".to_owned()],
+            spans: Vec::new(),
+        };
+
+        let score = score_fixture_with_deferrals(&corpus, &[], &[vague]);
+
+        assert!(score.outcomes[0].deferred());
+    }
+
+    /// Two flaws must not share one deferral.
+    #[test]
+    fn one_deferral_covers_at_most_one_flaw() {
+        let corpus = fixture(vec![
+            flaw("first", "src/server.js", 30, 30),
+            flaw("second", "src/server.js", 34, 34),
+        ]);
+
+        let score = score_fixture_with_deferrals(
+            &corpus,
+            &[],
+            &[deferral("candidate-1", "src/server.js", 30, 34)],
+        );
+
+        assert_eq!(score.deferred().len(), 1);
+        assert_eq!(score.never_noticed().len(), 1);
+    }
+
+    /// A deferral on a decoy is the outcome to want: it looked, suspected, and
+    /// stopped short of claiming it.
+    #[test]
+    fn a_deferral_on_a_decoy_is_reported_as_a_near_miss() {
+        let mut corpus = fixture(Vec::new());
+        corpus.control = true;
+        corpus.decoys = vec![Decoy {
+            id: "path-join-validated".to_owned(),
+            file: "src/inventory.py".to_owned(),
+            lines: (85, 88),
+            resembles: Some("CWE-22".to_owned()),
+            safe_because: None,
+        }];
+
+        let score = score_fixture_with_deferrals(
+            &corpus,
+            &[],
+            &[deferral("candidate-1", "src/inventory.py", 85, 88)],
+        );
+
+        assert_eq!(score.decoys_deferred, vec!["path-join-validated"]);
+        // Still a near miss, never a false positive: nothing was reported.
+        assert!(score.unmatched.is_empty());
+        assert!(score.decoys_tripped.is_empty());
+    }
+
+    /// A deferral pointing somewhere else must not be credited to a flaw.
+    #[test]
+    fn a_deferral_elsewhere_leaves_a_flaw_unnoticed() {
+        let corpus = fixture(vec![flaw("timing", "src/server.js", 35, 35)]);
+
+        let score = score_fixture_with_deferrals(
+            &corpus,
+            &[],
+            &[deferral("candidate-1", "src/other.js", 35, 35)],
+        );
+
+        assert!(score.outcomes[0].never_noticed());
+        assert_eq!(score.unattributed_deferrals, vec!["candidate-1"]);
+    }
+}
+
+#[cfg(test)]
+mod coverage_parsing_tests {
+    use super::*;
+
+    /// The real document from a real run, kept because every shape here was
+    /// first written from a guess about the schema and the guess was wrong.
+    fn real_coverage() -> String {
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/coverage-node-traversal.json"),
+        )
+        .expect("the captured coverage document")
+    }
+
+    #[test]
+    fn reads_a_deferral_out_of_a_real_coverage_document() {
+        let deferrals = deferrals_from_coverage(&real_coverage()).expect("parses");
+
+        assert_eq!(deferrals.len(), 1, "{deferrals:?}");
+        let deferral = &deferrals[0];
+        assert_eq!(deferral.id, "candidate-4b1d1f1e08b4b1f2");
+        assert!(
+            deferral
+                .reason
+                .as_deref()
+                .expect("a reason")
+                .contains("environment variable"),
+            "{deferral:?}"
+        );
+        // The line range comes from the surface label, not from the deferral.
+        assert_eq!(
+            deferral.spans,
+            vec![DeferredSpan {
+                file: "src/server.js".to_owned(),
+                lines: (28, 33),
+            }]
+        );
+    }
+
+    /// The end-to-end claim: the run that scored 2 of 3 did not overlook the
+    /// third flaw, it set it aside. This is the case that made the whole
+    /// distinction worth building, so it is checked against the real document
+    /// and the shipped corpus rather than against invented inputs.
+    #[test]
+    fn the_run_that_scored_two_of_three_had_seen_the_third() {
+        let corpus = GroundTruth::parse(
+            &std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../benchmark/ground-truth.json"),
+            )
+            .expect("the shipped corpus"),
+        )
+        .expect("parses");
+        let fixture = corpus.fixture("node-traversal").expect("the fixture");
+        let deferrals = deferrals_from_coverage(&real_coverage()).expect("parses");
+        // What that run actually reported: the traversal and the SSRF.
+        let findings = vec![
+            ReportedFinding {
+                title: "Path traversal".to_owned(),
+                severity: Some("high".to_owned()),
+                locations: vec![ReportedLocation {
+                    file: "src/server.js".to_owned(),
+                    line: 12,
+                }],
+            },
+            ReportedFinding {
+                title: "SSRF".to_owned(),
+                severity: Some("high".to_owned()),
+                locations: vec![ReportedLocation {
+                    file: "src/server.js".to_owned(),
+                    line: 22,
+                }],
+            },
+        ];
+
+        let score = score_fixture_with_deferrals(fixture, &findings, &deferrals);
+
+        assert_eq!(score.found(), 2);
+        assert_eq!(score.missed(), vec!["timing-unsafe-compare"]);
+        assert_eq!(
+            score.never_noticed(),
+            Vec::<&str>::new(),
+            "the scan saw it and said why it was not reporting it"
+        );
+        let (id, deferral) = score.deferred()[0];
+        assert_eq!(id, "timing-unsafe-compare");
+        assert!(deferral.reason.is_some());
+    }
+
+    /// A surface marked for follow up without a matching deferral entry is
+    /// still something the scan set aside.
+    #[test]
+    fn reads_a_surface_marked_for_follow_up_with_no_deferral_entry() {
+        let document = serde_json::json!({
+            "surfaces": [{
+                "id": "src-a-py-login",
+                "disposition": "needs_follow_up",
+                "label": "src/a.py:10-20 (login)",
+                "notes": "not sure this is reachable",
+            }],
+            "deferred": [],
+        })
+        .to_string();
+
+        let deferrals = deferrals_from_coverage(&document).expect("parses");
+
+        assert_eq!(deferrals.len(), 1);
+        assert_eq!(deferrals[0].id, "src-a-py-login");
+        assert_eq!(
+            deferrals[0].reason.as_deref(),
+            Some("not sure this is reachable")
+        );
+        assert_eq!(deferrals[0].spans[0].lines, (10, 20));
+    }
+
+    /// The same surface named both ways is one deferral, not two.
+    #[test]
+    fn does_not_count_a_surface_twice_when_a_deferral_already_names_it() {
+        let document = serde_json::json!({
+            "surfaces": [{
+                "id": "s1",
+                "disposition": "needs_follow_up",
+                "label": "src/a.py:10-20 (login)",
+            }],
+            "deferred": [{ "id": "candidate-1", "surfaceIds": ["s1"], "paths": ["src/a.py"] }],
+        })
+        .to_string();
+
+        let deferrals = deferrals_from_coverage(&document).expect("parses");
+
+        assert_eq!(deferrals.len(), 1, "{deferrals:?}");
+        assert_eq!(deferrals[0].id, "candidate-1");
+    }
+
+    /// A reported surface is not a deferral.
+    #[test]
+    fn a_reported_surface_is_not_treated_as_set_aside() {
+        let document = serde_json::json!({
+            "surfaces": [{ "id": "s1", "disposition": "reported", "label": "src/a.py:1-2 (x)" }],
+        })
+        .to_string();
+
+        assert!(
+            deferrals_from_coverage(&document)
+                .expect("parses")
+                .is_empty()
+        );
+    }
+
+    /// A label that is prose yields no span rather than a wrong one.
+    #[test]
+    fn refuses_to_guess_a_span_from_a_label_without_one() {
+        for label in [
+            "the login handler",
+            "src/a.py",
+            "src/a.py:notaline",
+            "src/a.py:20-10",
+            ":10-20",
+        ] {
+            assert_eq!(span_from_label(label), None, "{label}");
+        }
+    }
+
+    #[test]
+    fn reads_a_single_line_label() {
+        assert_eq!(
+            span_from_label("src/a.py:42 (thing)"),
+            Some(DeferredSpan {
+                file: "src/a.py".to_owned(),
+                lines: (42, 42),
+            })
+        );
+    }
+
+    #[test]
+    fn a_coverage_document_with_nothing_set_aside_yields_nothing() {
+        for body in ["{}", r#"{"deferred":[],"surfaces":[]}"#] {
+            assert!(
+                deferrals_from_coverage(body).expect("parses").is_empty(),
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_something_that_is_not_json() {
+        assert!(deferrals_from_coverage("not json").is_err());
     }
 }

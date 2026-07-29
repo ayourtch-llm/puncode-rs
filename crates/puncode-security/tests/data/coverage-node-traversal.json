@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0",
+  "documentType": "codex-security.coverage",
+  "scanId": "c6e127ba-79df-417d-9e77-e27ff8d4ab8c",
+  "mode": "repository",
+  "completeness": "partial",
+  "surfaces": [
+    {
+      "disposition": "reported",
+      "id": "src-server-js-file-endpoint",
+      "label": "src/server.js:10-17 (/file endpoint)",
+      "notes": "Path traversal confirmed with high confidence. Reportable with high severity.",
+      "receiptRefs": [
+        "artifacts/02_discovery/candidate_ledger.jsonl"
+      ],
+      "riskArea": "Path traversal via unsanitized filename in /file endpoint"
+    },
+    {
+      "disposition": "reported",
+      "id": "src-server-js-preview-endpoint",
+      "label": "src/server.js:20-25 (/preview endpoint)",
+      "notes": "SSRF confirmed with high confidence. Reportable with high severity.",
+      "receiptRefs": [
+        "artifacts/02_discovery/candidate_ledger.jsonl"
+      ],
+      "riskArea": "SSRF via unsanitized URL in /preview endpoint"
+    },
+    {
+      "disposition": "needs_follow_up",
+      "id": "src-server-js-admin-endpoint",
+      "label": "src/server.js:28-33 (/admin endpoint)",
+      "notes": "Token sourced from env var (not hardcoded), reducing severity. Deferred pending deployment-context review.",
+      "receiptRefs": [
+        "artifacts/02_discovery/candidate_ledger.jsonl"
+      ],
+      "riskArea": "Weak authentication in /admin endpoint"
+    }
+  ],
+  "deferred": [
+    {
+      "id": "candidate-4b1d1f1e08b4b1f2",
+      "paths": [
+        "src/server.js"
+      ],
+      "reason": "Token is sourced from environment variable, not hardcoded. The CWE-259 framing is weakened. Exploitation requires token leakage (via logs/referer) or a timing side-channel, neither guaranteed. Deferred pending deployment-context review of log exposure and token entropy.",
+      "surfaceIds": [
+        "src-server-js-admin-endpoint"
+      ]
+    }
+  ],
+  "openQuestions": [
+    {
+      "question": "Review deployment context for /admin endpoint: Are query parameters logged by the reverse proxy? What is the ADMIN_TOKEN length and entropy?"
+    },
+    {
+      "question": "Verify network egress controls: Does the server have access to cloud metadata endpoints (169.254.169.254) or internal services that would elevate the SSRF severity to critical?"
+    }
+  ]
+}

@@ -215,11 +215,14 @@ Detection
 
   flask-injection      2 of 2 found
   c-memory             3 of 3 found
-  node-traversal       2 of 3 found   missed: timing-unsafe-compare
+  node-traversal       2 of 3 found
+                       set aside, not reported: timing-unsafe-compare
+                         "Token is sourced from environment variable, not hardcoded. The CWE-259…"
   clean-python         control — 0 false positive(s)
 
   detection      88%  (7 of 8)
   unmatched      0  (0 on fixtures with nothing planted)
+  not reported   0 never noticed, 1 seen and set aside
 
 By class
 
@@ -230,10 +233,41 @@ By class
 ```
 
 Real output, from a 35B model running locally. It found injection, command
-injection, traversal, SSRF, a stack overflow, a use-after-free and an off-by-one,
-and missed the timing-unsafe comparison — which is the subtlest thing in the
-corpus and exactly the kind of detail a per-class breakdown exists to surface.
+injection, traversal, SSRF, a stack overflow, a use-after-free and an off-by-one.
 Nothing was reported against the clean fixture.
+
+### Not found is two different things
+
+The last line above is the one worth reading twice. The timing-unsafe comparison
+was not reported — but the scan had seen it, and written down why it was leaving
+it alone. That is not the same as missing it, and a report that says only "2 of
+3" cannot tell you which happened.
+
+Both states are real here. Over three runs of the same model against the same
+unchanged corpus, that one flaw came out **never noticed** once, **reported**
+once, and **seen and set aside with reasoning** once. The first two runs both
+scored 88%, and they were not the same result.
+
+The difference decides what you do next:
+
+- **Never noticed** is a blind spot. The scanner did not look, or looked and saw
+  nothing. That needs a better scanner, a better prompt, or a different model —
+  and nothing you say to this one will help.
+- **Seen and set aside** is a judgement, written down, that you can read and
+  disagree with. Here it was *"Token is sourced from environment variable, not
+  hardcoded"* — a defensible argument about severity that still leaves a timing
+  side channel in the code. That needs a person, not a better model.
+
+So `bench` reads the scan's `coverage.json` alongside its findings and reports
+the two separately. **A deferral never counts as a detection**: the rate is the
+share that was actually reported, and a scanner that explained every flaw away
+would still score zero. It also names deferrals it cannot place rather than
+dropping them, because scoring that silently discards what it cannot account for
+looks more complete than it is.
+
+On a control fixture the same signal runs the other way — a deferral landing on
+one of the decoys is reported as *nearly fooled, then stopped short*, which is
+the best outcome available there and is invisible unless something says it.
 
 It also compares severities:
 
@@ -264,6 +298,8 @@ Three deliberate choices:
   it finds nothing at all.
 - **A rate over nothing is reported as unmeasured, not as zero.** They are
   different facts, and zero reads as total failure.
+- **A flaw the scan argued about is not a flaw it missed.** Reported apart, and
+  never counted as found.
 
 ### Comparing against an earlier run
 

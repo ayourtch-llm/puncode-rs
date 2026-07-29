@@ -214,6 +214,25 @@ time; CWE-208, the timing-unsafe comparison, is found roughly one run in three.*
 Read a single run accordingly — 88% and 100% here are the same model on the same
 code, and the difference is entirely that one flaw.
 
+And the two 88% runs are not the same result either. Reading the scans rather
+than the scores showed CWE-208 came out **never noticed** in the 12:59 run and
+**seen and deferred, with a written reason**, in the 15:09 one:
+
+> Token is sourced from environment variable, not hardcoded. The CWE-259 framing
+> is weakened. Exploitation requires token leakage or a timing side-channel,
+> neither guaranteed. Deferred pending deployment-context review.
+
+That is a defensible argument about severity, not a miss — and the benchmark had
+been calling it a miss because it only ever read `findings.json`. `bench` now
+also reads `coverage.json` and reports the two apart. Deferrals do **not** count
+toward detection; a scanner that explained every flaw away must still score
+zero.
+
+Worth remembering as a habit rather than a fix: **the scan wrote down more than
+the score was reading.** `coverage.json` carries surfaces, dispositions, open
+questions and deferrals, and none of it was scored. When a measurement looks
+unstable, check whether the instrument is reading everything the subject said.
+
 The decoys have never been tripped, across both runs that had them.
 
 Severity is where the model differs most, and consistently: it rates the
@@ -229,16 +248,22 @@ work is done.
 
 ## Open
 
-1. **`report.md` finalisation is flaky.** Detection is reliable; the agent
+1. **`node-traversal` and `c-memory` exit 2 for reasons that are not detection
+   failures.** `node-traversal` completes fully and exits 2 because coverage is
+   `partial` — it found and reported everything it meant to. `c-memory` fails at
+   the very end with "The sealed scan manifest changed while it was being
+   published", after all the work is done. Neither is a missed flaw, and reading
+   the exit code alone would suggest otherwise.
+2. **`report.md` finalisation is flaky.** Detection is reliable; the agent
    sometimes stops before running `finalize_scan_contract.py`, leaving an
    otherwise-good scan at exit 2. Last gap between "finds the bugs" and "clean
    exit 0". Likely the same class as the scope/contract fixes.
-2. **No control run against a stronger model.** Everything concluded about model
+3. **No control run against a stronger model.** Everything concluded about model
    behaviour comes from one local model over ~10 runs. A hosted run would
    separate general behaviour from this model's habits.
-3. **`--exclude` does not exist.** If it is ever added, registration must carry
+4. **`--exclude` does not exist.** If it is ever added, registration must carry
    it and the hard-coded `excludePaths: []` in `prompt.rs` becomes wrong.
-4. **Upstream feedback.** No shipped skill mentions the workbench contract, and
+5. **Upstream feedback.** No shipped skill mentions the workbench contract, and
    `includePaths`/`excludePaths` have no schema description. That is why a
    weaker model never finds the rule. Worth reporting upstream.
 
