@@ -2,8 +2,9 @@
 #
 # Runs puncode-security against the bundled fixtures and reports what it found.
 #
-# Each fixture has known planted flaws listed in its README; the counts below
-# say what a healthy scan should report, so a silent regression is visible.
+# Each fixture has known planted flaws, documented in docs/fixtures.md — kept
+# out of the fixture directories so a scan cannot simply read the answers. The
+# counts below say what a healthy scan should report.
 #
 #   ./scripts/scan-fixtures.sh                     # hosted Codex credentials
 #   ./scripts/scan-fixtures.sh --local http://host:8080/v1 --model my-model
@@ -11,7 +12,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT="${OUT_DIR:-$ROOT/target/fixture-scans}"
+# Outside the repository on purpose: a fixture lives inside this checkout, so
+# the checkout is the protected scan root and results may not be written into it.
+OUT="${OUT_DIR:-${TMPDIR:-/tmp}/puncode-fixture-scans}"
 BIN="${PUNCODE_BIN:-$ROOT/target/debug/puncode-security}"
 BASE_URL="" MODEL="" EXTRA=()
 
@@ -32,7 +35,7 @@ if [[ ! -x "$BIN" ]]; then
     exit 2
 fi
 
-# Fixture name and the number of findings its README says are planted there.
+# Fixture name and the number of flaws planted in it, per docs/fixtures.md.
 FIXTURES=("flask-injection:2" "c-memory:3")
 
 mkdir -p "$OUT"

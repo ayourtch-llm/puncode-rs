@@ -115,7 +115,11 @@ Two small projects with deliberate, documented flaws:
 | `fixtures/flask-injection` | Python | SQL injection, OS command injection |
 | `fixtures/c-memory` | C | Stack buffer overflow, use after free, off-by-one |
 
-Run a scan against both and compare against what each README says is there:
+What is planted in each is documented in [docs/fixtures.md](docs/fixtures.md) —
+deliberately *outside* the fixture directories, since a scan reads everything in
+its target and a list of the answers would make the exercise meaningless.
+
+Run a scan against both and compare against the expected counts:
 
 ```sh
 ./scripts/scan-fixtures.sh                                     # hosted Codex

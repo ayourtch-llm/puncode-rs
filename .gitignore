@@ -3,3 +3,6 @@
 
 # Built fixture binaries
 /fixtures/c-memory/store
+
+# Deploy key and push helper; never committed
+/.deploy/
