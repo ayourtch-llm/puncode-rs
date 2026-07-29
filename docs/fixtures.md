@@ -80,3 +80,16 @@ what fooled it.
 ```
 
 The expected counts are held in the script, not in the fixtures.
+
+Each fixture is copied to a scratch git repository and scanned there, because
+the fixtures live inside this checkout and a commit during a run moves HEAD,
+which the workbench refuses at the very end — after all the work is done.
+
+One consequence, deliberate: every run creates a fresh scratch repository, so
+runs of the same fixture have different target identities and the workbench
+cannot relate them. `scans compare` and `scans match` therefore do not work
+across corpus runs. `bench` and `consensus` are unaffected — they match on file
+and line rather than on target identity, which was checked across two runs with
+different target IDs — and they are what the corpus is compared with. Scanning a
+real repository is unchanged: the same repository keeps the same identity across
+runs.
