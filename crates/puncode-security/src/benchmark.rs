@@ -122,6 +122,25 @@ pub struct FlawOutcome {
     pub cwe: Option<String>,
     /// The title of the finding that matched, if one did.
     pub found_as: Option<String>,
+    /// What the corpus says this deserves.
+    pub expected_severity: Option<String>,
+    /// What the scan called it.
+    pub reported_severity: Option<String>,
+}
+
+impl FlawOutcome {
+    /// Whether the scan rated this as the corpus does.
+    ///
+    /// `None` when either side did not say. Severity is a judgement, so this is
+    /// reported as agreement rather than correctness: a corpus author and a
+    /// model can reasonably differ, and the useful signal is how far apart they
+    /// are rather than who is right.
+    #[must_use]
+    pub fn severity_agrees(&self) -> Option<bool> {
+        let expected = self.expected_severity.as_deref()?;
+        let reported = self.reported_severity.as_deref()?;
+        Some(expected.eq_ignore_ascii_case(reported))
+    }
 }
 
 impl FlawOutcome {
@@ -189,14 +208,19 @@ pub fn score_fixture(fixture: &Fixture, findings: &[ReportedFinding]) -> Fixture
             .iter()
             .enumerate()
             .find(|(index, finding)| !claimed[*index] && cites(finding, flaw));
-        let found_as = matched.map(|(index, finding)| {
-            claimed[index] = true;
-            finding.title.clone()
-        });
+        let (found_as, reported_severity) = match matched {
+            Some((index, finding)) => {
+                claimed[index] = true;
+                (Some(finding.title.clone()), finding.severity.clone())
+            }
+            None => (None, None),
+        };
         outcomes.push(FlawOutcome {
             flaw_id: flaw.id.clone(),
             cwe: flaw.cwe.clone(),
             found_as,
+            expected_severity: flaw.severity.clone(),
+            reported_severity,
         });
     }
 
@@ -290,6 +314,45 @@ impl BenchmarkReport {
     #[must_use]
     pub fn false_positives(&self) -> usize {
         self.scores.iter().map(|score| score.unmatched.len()).sum()
+    }
+
+    /// Flaws where the scan rated the severity as the corpus does, over those
+    /// where both said something.
+    ///
+    /// `None` when nothing could be compared. Reported as agreement, never as
+    /// accuracy: severity is a judgement and the corpus is one opinion.
+    #[must_use]
+    pub fn severity_agreement(&self) -> Option<(usize, usize)> {
+        let comparable: Vec<bool> = self
+            .scores
+            .iter()
+            .flat_map(|score| &score.outcomes)
+            .filter_map(FlawOutcome::severity_agrees)
+            .collect();
+        if comparable.is_empty() {
+            return None;
+        }
+        Some((
+            comparable.iter().filter(|agreed| **agreed).count(),
+            comparable.len(),
+        ))
+    }
+
+    /// Flaws the scan rated differently, as (id, expected, reported).
+    #[must_use]
+    pub fn severity_disagreements(&self) -> Vec<(&str, &str, &str)> {
+        self.scores
+            .iter()
+            .flat_map(|score| &score.outcomes)
+            .filter(|outcome| outcome.severity_agrees() == Some(false))
+            .filter_map(|outcome| {
+                Some((
+                    outcome.flaw_id.as_str(),
+                    outcome.expected_severity.as_deref()?,
+                    outcome.reported_severity.as_deref()?,
+                ))
+            })
+            .collect()
     }
 
     /// Decoys tripped anywhere in the corpus.
@@ -738,6 +801,8 @@ mod threshold_tests {
                 flaw_id: format!("f{index}"),
                 cwe: None,
                 found_as: (index < found).then(|| "found".to_owned()),
+                expected_severity: None,
+                reported_severity: None,
             })
             .collect();
         BenchmarkReport {
@@ -961,5 +1026,109 @@ mod decoy_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod severity_tests {
+    use super::*;
+
+    fn flaw_with(severity: &str) -> PlantedFlaw {
+        PlantedFlaw {
+            id: "a".to_owned(),
+            file: "src/app.py".to_owned(),
+            lines: (10, 10),
+            cwe: Some("CWE-89".to_owned()),
+            severity: Some(severity.to_owned()),
+            summary: None,
+        }
+    }
+
+    fn fixture_with(severity: &str) -> Fixture {
+        Fixture {
+            name: "f".to_owned(),
+            path: "fixtures/f".to_owned(),
+            language: None,
+            flaws: vec![flaw_with(severity)],
+            control: false,
+            decoys: Vec::new(),
+        }
+    }
+
+    fn rated(severity: Option<&str>) -> ReportedFinding {
+        ReportedFinding {
+            title: "found".to_owned(),
+            severity: severity.map(str::to_owned),
+            locations: vec![ReportedLocation {
+                file: "src/app.py".to_owned(),
+                line: 10,
+            }],
+        }
+    }
+
+    #[test]
+    fn notices_when_the_scan_rates_a_flaw_as_the_corpus_does() {
+        let score = score_fixture(&fixture_with("high"), &[rated(Some("high"))]);
+        let report = BenchmarkReport {
+            scores: vec![score],
+        };
+
+        assert_eq!(report.severity_agreement(), Some((1, 1)));
+        assert!(report.severity_disagreements().is_empty());
+    }
+
+    /// A critical rated low is nearly as bad as one missed, so a difference is
+    /// surfaced with both opinions rather than hidden.
+    #[test]
+    fn names_both_opinions_when_they_differ() {
+        let score = score_fixture(&fixture_with("critical"), &[rated(Some("low"))]);
+        let report = BenchmarkReport {
+            scores: vec![score],
+        };
+
+        assert_eq!(report.severity_agreement(), Some((0, 1)));
+        assert_eq!(report.severity_disagreements(), [("a", "critical", "low")]);
+    }
+
+    /// Wording, not judgement.
+    #[test]
+    fn ignores_the_case_a_severity_was_written_in() {
+        let score = score_fixture(&fixture_with("high"), &[rated(Some("HIGH"))]);
+        let report = BenchmarkReport {
+            scores: vec![score],
+        };
+
+        assert_eq!(report.severity_agreement(), Some((1, 1)));
+    }
+
+    /// Nothing is claimed when one side did not say.
+    #[test]
+    fn compares_nothing_when_a_severity_is_missing() {
+        for reported in [None, Some("high")] {
+            let mut fixture = fixture_with("high");
+            if reported.is_none() {
+                // Scan said nothing.
+            } else {
+                // Corpus says nothing.
+                fixture.flaws[0].severity = None;
+            }
+            let score = score_fixture(&fixture, &[rated(reported)]);
+            let report = BenchmarkReport {
+                scores: vec![score],
+            };
+            assert_eq!(report.severity_agreement(), None);
+        }
+    }
+
+    /// A flaw that was never found has no reported severity to compare.
+    #[test]
+    fn a_missed_flaw_is_not_a_severity_disagreement() {
+        let score = score_fixture(&fixture_with("critical"), &[]);
+        let report = BenchmarkReport {
+            scores: vec![score],
+        };
+
+        assert_eq!(report.severity_agreement(), None);
+        assert!(report.severity_disagreements().is_empty());
     }
 }

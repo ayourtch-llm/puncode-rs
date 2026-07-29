@@ -155,6 +155,16 @@ pub fn render_json(outcome: &Report, shortfalls: &[Shortfall]) -> String {
         "controlFalsePositives": report.control_false_positives(),
         "fixtures": fixtures,
         "byClass": by_class,
+        "severityAgreement": report.severity_agreement().map(|(agreed, comparable)| {
+            serde_json::json!({ "agreed": agreed, "comparable": comparable })
+        }),
+        "severityDisagreements": report
+            .severity_disagreements()
+            .into_iter()
+            .map(|(id, expected, reported)| {
+                serde_json::json!({ "flaw": id, "corpus": expected, "scan": reported })
+            })
+            .collect::<Vec<_>>(),
         "unscanned": outcome.unscanned,
         "shortfalls": shortfalls.iter().map(Shortfall::describe).collect::<Vec<_>>(),
     }))
@@ -226,6 +236,19 @@ pub fn render(outcome: &Report) -> String {
         report.false_positives(),
         report.control_false_positives()
     ));
+
+    // Reported as agreement, never as accuracy. Severity is a judgement, and
+    // the corpus is one opinion about it.
+    if let Some((agreed, comparable)) = report.severity_agreement() {
+        lines.push(format!(
+            "  severity       {agreed} of {comparable} rated as the corpus does"
+        ));
+        for (id, expected, reported) in report.severity_disagreements() {
+            lines.push(format!(
+                "                 {id}: corpus {expected}, scan {reported}"
+            ));
+        }
+    }
 
     let by_class = report.by_cwe();
     if !by_class.is_empty() {

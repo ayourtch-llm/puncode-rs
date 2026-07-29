@@ -235,6 +235,24 @@ and missed the timing-unsafe comparison — which is the subtlest thing in the
 corpus and exactly the kind of detail a per-class breakdown exists to surface.
 Nothing was reported against the clean fixture.
 
+It also compares severities:
+
+```
+  severity       4 of 8 rated as the corpus does
+                 cmdi-ping: corpus critical, scan high
+                 use-after-free: corpus high, scan medium
+```
+
+Real output from the run that scored 100% detection. Finding everything says
+nothing about whether it was rated sensibly, and a critical rated medium is
+nearly as bad as one missed — a reviewer working down a list by severity gets to
+it last, or not at all. On that run the model consistently rated memory-safety
+flaws lower than the corpus does.
+
+This is reported as **agreement, not accuracy**. Severity is a judgement and the
+corpus is one opinion; the useful signal is where the two differ and in which
+direction, not who is right.
+
 Three deliberate choices:
 
 - **Matching is by location, never by wording.** A model saying "OS command
