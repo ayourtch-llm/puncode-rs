@@ -389,10 +389,8 @@ fn record_provenance(options: &cli::ScanArgs, scan_dir: Option<&std::path::Path>
             .and_then(|root| std::fs::read_to_string(root.join(".unpacked")).ok())
             .map(|digest| digest.trim().to_owned()),
         model: options.model.clone(),
-        endpoint: options
-            .base_url
-            .as_deref()
-            .map(puncode_security::provenance::redact_endpoint),
+        // Display is redacted, so the record cannot carry a credential.
+        endpoint: options.base_url.as_ref().map(ToString::to_string),
         wire_api: options.base_url.as_ref().map(|_| {
             puncode_security::model_endpoint::WireApi::from(options.wire_api)
                 .as_str()

@@ -20,7 +20,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use puncode_security::diagnosis::{Cause, recognise};
-use puncode_security::provenance::redact_endpoint;
+use puncode_security::provenance::Endpoint;
 use puncode_security::runtime::{
     PluginPythonOptions, bundled_plugin_root, resolve_codex_command, resolve_plugin_python,
 };
@@ -59,7 +59,7 @@ pub struct Examination {
     pub environment: ProcessEnvironment,
     pub working_directory: PathBuf,
     /// The endpoint to exercise, when one was given.
-    pub base_url: Option<String>,
+    pub base_url: Option<Endpoint>,
     /// The model to ask for, when one was given.
     pub model: Option<String>,
 }
@@ -235,9 +235,8 @@ fn find_bundled_bwrap() -> Option<PathBuf> {
 /// The address is reported with any credentials removed. This output is meant
 /// to be shared — it is what someone pastes into a bug report when asking why a
 /// scan will not run — and a URL can carry a username and password.
-fn check_endpoint(base_url: &str) -> Health {
-    let shown = redact_endpoint(base_url);
-    let target = format!("{}/models", base_url.trim_end_matches('/'));
+fn check_endpoint(base_url: &Endpoint) -> Health {
+    let target = format!("{}/models", base_url.for_request().trim_end_matches('/'));
     let agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(20)))
         .http_status_as_error(false)
@@ -245,15 +244,17 @@ fn check_endpoint(base_url: &str) -> Health {
         .new_agent();
 
     match agent.get(&target).call() {
-        Ok(response) if response.status().is_success() => Health::Ok(format!("answers at {shown}")),
+        Ok(response) if response.status().is_success() => {
+            Health::Ok(format!("answers at {base_url}"))
+        }
         Ok(response) => Health::Broken {
-            detail: format!("{shown} answered {}", response.status()),
+            detail: format!("{base_url} answered {}", response.status()),
             remedy: Cause::EndpointUnreachable.explanation().to_owned(),
         },
         // The error text is not interpolated: a transport error can quote the
         // URL it was given, credentials and all.
         Err(error) => Health::Broken {
-            detail: format!("{shown} did not answer ({})", error_kind(&error)),
+            detail: format!("{base_url} did not answer ({})", error_kind(&error)),
             remedy: Cause::EndpointUnreachable.explanation().to_owned(),
         },
     }
@@ -265,12 +266,15 @@ fn check_endpoint(base_url: &str) -> Health {
 /// `developer` items, and a server whose template permits one system message
 /// refuses the request with a message about ordering — which is not the problem
 /// and sends the reader somewhere useless.
-fn check_system_messages(base_url: &str, model: Option<&str>) -> Health {
+fn check_system_messages(base_url: &Endpoint, model: Option<&str>) -> Health {
     let Some(model) = model else {
         return Health::Skipped("no --model given, so nothing could be asked".to_owned());
     };
 
-    let target = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let target = format!(
+        "{}/chat/completions",
+        base_url.for_request().trim_end_matches('/')
+    );
     let agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(90)))
         .http_status_as_error(false)

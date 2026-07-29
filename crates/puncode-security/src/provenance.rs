@@ -93,6 +93,74 @@ impl Provenance {
     }
 }
 
+/// An endpoint address, which may carry credentials.
+///
+/// Printing one is safe: `Display` shows the address with any username and
+/// password removed. The form that still carries them is reachable only through
+/// [`Endpoint::for_request`], which is named so that its use is visible when
+/// reading a call site and findable when auditing.
+///
+/// This exists because the plain string was not safe and looked it. The same
+/// credential leaked into the provenance record, then into `doctor` and both
+/// dry-run renderings — three sites, fixed one at a time, because nothing at
+/// the call site distinguished the safe use from the unsafe one.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Endpoint {
+    raw: String,
+}
+
+/// Redacted, like `Display`.
+///
+/// `Debug` reaches people too — through a panic message, a log line, or a
+/// derived `Debug` on any struct that holds one. Leaving it derived would have
+/// meant the type protected the careful path and not the careless one.
+impl std::fmt::Debug for Endpoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("Endpoint")
+            .field(&redact_endpoint(&self.raw))
+            .finish()
+    }
+}
+
+impl Endpoint {
+    /// Takes an address as given.
+    #[must_use]
+    pub fn new(raw: impl Into<String>) -> Self {
+        Self { raw: raw.into() }
+    }
+
+    /// The address as given, credentials and all.
+    ///
+    /// For handing to a request. Anything that reaches a person should use
+    /// `Display` instead.
+    #[must_use]
+    pub fn for_request(&self) -> &str {
+        &self.raw
+    }
+
+    /// Whether this address carries credentials at all.
+    #[must_use]
+    pub fn carries_credentials(&self) -> bool {
+        url::Url::parse(&self.raw)
+            .is_ok_and(|parsed| !parsed.username().is_empty() || parsed.password().is_some())
+    }
+}
+
+impl std::fmt::Display for Endpoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&redact_endpoint(&self.raw))
+    }
+}
+
+impl std::str::FromStr for Endpoint {
+    type Err = std::convert::Infallible;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self::new(value))
+    }
+}
+
 /// An endpoint URL with any credentials removed.
 ///
 /// A URL may carry a username and password before the host, and a scan record
@@ -225,5 +293,59 @@ mod tests {
         for absent in ["endpoint", "model", "wireApi", "endpointAdaptations"] {
             assert!(!body.contains(absent), "{absent} should be absent: {body}");
         }
+    }
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::*;
+
+    /// The point of the type: the obvious way to print one is the safe way.
+    #[test]
+    fn printing_an_endpoint_does_not_show_its_credentials() {
+        let endpoint = Endpoint::new("http://someone:supersecret@host:8080/v1");
+
+        let printed = format!("{endpoint}");
+
+        assert!(!printed.contains("supersecret"), "{printed}");
+        assert!(!printed.contains("someone"), "{printed}");
+        assert!(printed.contains("host:8080"), "{printed}");
+    }
+
+    /// Debug is printed too — in a panic, a log line, a derived Debug on a
+    /// struct that holds one — so it must not be the leak that Display is not.
+    #[test]
+    fn debugging_an_endpoint_does_not_show_its_credentials() {
+        let endpoint = Endpoint::new("http://someone:supersecret@host:8080/v1");
+
+        let shown = format!("{endpoint:?}");
+
+        assert!(!shown.contains("supersecret"), "{shown}");
+    }
+
+    /// The request still needs the real thing, and the name says so.
+    #[test]
+    fn the_request_form_keeps_what_the_request_needs() {
+        let endpoint = Endpoint::new("http://someone:supersecret@host:8080/v1");
+
+        assert_eq!(
+            endpoint.for_request(),
+            "http://someone:supersecret@host:8080/v1"
+        );
+    }
+
+    #[test]
+    fn an_address_without_credentials_prints_unchanged() {
+        let endpoint = Endpoint::new("http://host:8080/v1");
+
+        assert_eq!(format!("{endpoint}"), "http://host:8080/v1");
+        assert!(!endpoint.carries_credentials());
+    }
+
+    #[test]
+    fn notices_when_an_address_carries_credentials() {
+        assert!(Endpoint::new("http://u:p@host/v1").carries_credentials());
+        assert!(Endpoint::new("http://u@host/v1").carries_credentials());
+        assert!(!Endpoint::new("http://host/v1").carries_credentials());
     }
 }

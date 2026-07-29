@@ -142,6 +142,25 @@ reuse, and a mismatch replaces the tree and says so. Do not "optimise" that
 check away: it costs a fraction of the ~300 ms a `doctor` run already takes,
 before a scan that runs for minutes.
 
+## Endpoint credentials are a type, not a discipline
+
+An endpoint URL can carry a username and password. It leaked three times — into
+`provenance.json`, then into `doctor` and both dry-run renderings — and each fix
+was a call to a redaction function at the site that printed it. Each time a site
+was missed, because nothing at the call site said which uses were safe.
+
+`provenance::Endpoint` now holds it. `Display` **and** `Debug` are redacted; the
+credential-carrying form is reachable only through `for_request()`. Printing one
+the obvious way is safe, and the unsafe path is named so it is visible when
+reading and greppable when auditing.
+
+`Debug` matters as much as `Display` here: it reaches people through panics,
+logs, and any derived `Debug` on a struct that holds one — `ScanArgs` derives it.
+A test asserts both.
+
+**If you add a field carrying something sensitive, give it a type rather than a
+convention.** Three fixes over two days did not stop the leak; the type did.
+
 ## Open
 
 1. **`report.md` finalisation is flaky.** Detection is reliable; the agent

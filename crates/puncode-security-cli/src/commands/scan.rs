@@ -59,6 +59,7 @@ fn endpoint_adapter(
     let Some(base_url) = &arguments.base_url else {
         return Ok(None);
     };
+    let base_url = base_url.for_request();
     let adaptations = Adaptations {
         merge_system: arguments
             .endpoint_compat
@@ -127,13 +128,17 @@ fn config(arguments: &ScanArgs, endpoint: Option<&str>) -> Result<PuncodeSecurit
     // believed to be protecting someone.
     puncode_security::model_endpoint::validate_cost_limit_for_endpoint(
         arguments.max_cost,
-        arguments.base_url.as_deref(),
+        arguments.base_url.as_ref().map(|_| "endpoint"),
     )
     .map_err(|error| error.to_string())?;
 
     // An endpoint and a hand-written provider override say the same thing, so
     // naming both is a contradiction rather than a preference.
-    if let Some(base_url) = endpoint.or(arguments.base_url.as_deref()) {
+    let configured = arguments
+        .base_url
+        .as_ref()
+        .map(|endpoint| endpoint.for_request().to_owned());
+    if let Some(base_url) = endpoint.map(str::to_owned).or(configured) {
         for key in ["model_provider", "model_providers"] {
             if overrides.contains_key(key) {
                 return Err(format!(
@@ -143,7 +148,7 @@ fn config(arguments: &ScanArgs, endpoint: Option<&str>) -> Result<PuncodeSecurit
         }
         let endpoint = puncode_security::model_endpoint::model_endpoint_overrides(
             &puncode_security::model_endpoint::ModelEndpoint {
-                base_url: base_url.to_owned(),
+                base_url: base_url.clone(),
                 wire_api: arguments.wire_api.into(),
                 api_key_env: arguments.api_key_env.clone(),
             },
@@ -248,10 +253,9 @@ fn report(preflight: &ScanPreflight, arguments: &ScanArgs) -> Value {
     // running a real scan.
     if let Some(base_url) = &arguments.base_url {
         record["modelEndpoint"] = json!({
-            // Reported with credentials removed: a dry run is what someone
-            // shares to show what a scan would do, and a URL can carry a
-            // username and password.
-            "baseUrl": puncode_security::provenance::redact_endpoint(base_url),
+            // Endpoint's Display is redacted, so this cannot carry a
+            // credential however it is formatted.
+            "baseUrl": base_url.to_string(),
             "wireApi": puncode_security::model_endpoint::WireApi::from(arguments.wire_api).as_str(),
             "apiKeyEnv": arguments.api_key_env,
         });
@@ -329,10 +333,7 @@ fn render_text(preflight: &ScanPreflight, arguments: &ScanArgs) -> String {
     // Reported here as well as in the structured form: someone reading the
     // human rendering is asking the same question about where the model runs.
     if let Some(base_url) = &arguments.base_url {
-        lines.push(format!(
-            "  endpoint         {}",
-            puncode_security::provenance::redact_endpoint(base_url)
-        ));
+        lines.push(format!("  endpoint         {base_url}"));
     }
     lines.push(format!("  reasoning effort {}", preflight.reasoning_effort));
     lines.push(format!(

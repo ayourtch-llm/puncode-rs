@@ -107,7 +107,7 @@ pub struct BenchArgs {
 pub struct DoctorArgs {
     /// Also exercise this endpoint.
     #[arg(long, value_name = "URL", env = "CODEX_SECURITY_BASE_URL")]
-    pub base_url: Option<String>,
+    pub base_url: Option<puncode_security::provenance::Endpoint>,
     /// Ask the endpoint for this model.
     #[arg(long, value_name = "MODEL")]
     pub model: Option<String>,
@@ -269,7 +269,7 @@ pub struct ScanArgs {
     /// For a self-hosted or local model server. Pair with `--model` to name the
     /// model the endpoint serves.
     #[arg(long, value_name = "URL", env = "CODEX_SECURITY_BASE_URL")]
-    pub base_url: Option<String>,
+    pub base_url: Option<puncode_security::provenance::Endpoint>,
     /// Request shape the endpoint speaks.
     #[arg(long, value_enum, default_value = "responses", requires = "base_url")]
     pub wire_api: WireApi,
