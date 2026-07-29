@@ -11,6 +11,7 @@ use puncode_security::benchmark::{
     BenchmarkReport, Comparison, GroundTruth, ReportedFinding, ReportedLocation, Shortfall,
     Thresholds, compare, deferrals_from_coverage, score_fixture_with_deferrals,
 };
+use puncode_security::corpus_audit::{Leak, audit_fixture, describe as describe_leak};
 use serde_json::Value;
 
 /// Scores every fixture that has a scan directory under `results`.
@@ -25,8 +26,15 @@ pub fn run(ground_truth: &Path, results: &Path, corpus_root: &Path) -> Result<Re
 
     let mut scores = Vec::new();
     let mut unscanned = Vec::new();
+    let mut leaks = Vec::new();
 
     for fixture in &corpus.fixtures {
+        // Audited whether or not it was scanned. A corpus that gives its
+        // answers away is worth saying even when there is no number to qualify.
+        leaks.extend(audit_fixture(
+            &fixture.name,
+            &corpus_root.join(&fixture.path),
+        ));
         let findings_path = results.join(&fixture.name).join("findings.json");
         let Ok(body) = std::fs::read_to_string(&findings_path) else {
             unscanned.push(fixture.name.clone());
@@ -47,6 +55,7 @@ pub fn run(ground_truth: &Path, results: &Path, corpus_root: &Path) -> Result<Re
     Ok(Report {
         report: BenchmarkReport { scores },
         unscanned,
+        leaks,
     })
 }
 
@@ -54,6 +63,13 @@ pub fn run(ground_truth: &Path, results: &Path, corpus_root: &Path) -> Result<Re
 pub struct Report {
     pub report: BenchmarkReport,
     pub unscanned: Vec<String>,
+    /// Text in a fixture that names what is planted in it.
+    ///
+    /// Carried beside the score rather than checked separately, because the
+    /// two must be read together: a detection rate measured over a corpus that
+    /// gives its answers away is not a detection rate, and it looks exactly
+    /// like one.
+    pub leaks: Vec<Leak>,
 }
 
 /// Pulls the locations out of a findings document.
@@ -185,6 +201,15 @@ pub fn render_json(outcome: &Report, shortfalls: &[Shortfall]) -> String {
             })
             .collect::<Vec<_>>(),
         "unscanned": outcome.unscanned,
+        // Named "corpusLeaks" rather than folded into shortfalls: a threshold
+        // says the run fell short, this says the measurement is not one.
+        "corpusLeaks": outcome.leaks.iter().map(|leak| serde_json::json!({
+            "fixture": leak.fixture,
+            "file": leak.file,
+            "line": leak.line,
+            "phrase": leak.phrase,
+            "text": leak.text,
+        })).collect::<Vec<_>>(),
         "shortfalls": shortfalls.iter().map(Shortfall::describe).collect::<Vec<_>>(),
     }))
     .unwrap_or_else(|error| format!("{{\"error\":\"{error}\"}}"))
@@ -281,7 +306,27 @@ pub fn render_comparison(comparison: &Comparison) -> String {
 #[must_use]
 pub fn render(outcome: &Report) -> String {
     let report = &outcome.report;
-    let mut lines = vec!["Detection".to_owned(), String::new()];
+    let mut lines = Vec::new();
+
+    // Before the numbers, never after. Somebody reading a score stops at the
+    // score, and this is the fact that decides whether the score means
+    // anything at all.
+    if !outcome.leaks.is_empty() {
+        lines.push("THE CORPUS GIVES ITS ANSWERS AWAY".to_owned());
+        lines.push(String::new());
+        for leak in &outcome.leaks {
+            lines.push(format!("  {}", describe_leak(leak)));
+        }
+        lines.push(String::new());
+        lines.push(
+            "A scan reads its whole target, so these numbers measure reading and not".to_owned(),
+        );
+        lines.push("detection. Take the text out and run it again.".to_owned());
+        lines.push(String::new());
+    }
+
+    lines.push("Detection".to_owned());
+    lines.push(String::new());
 
     for score in &report.scores {
         if score.control {
@@ -407,7 +452,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn corpus_dir() -> std::path::PathBuf {
+    pub(super) fn corpus_dir() -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
 
@@ -517,6 +562,7 @@ mod tests {
         let outcome = Report {
             report: BenchmarkReport { scores: Vec::new() },
             unscanned: Vec::new(),
+            leaks: Vec::new(),
         };
 
         let rendered = render(&outcome);
@@ -635,5 +681,108 @@ mod tests {
             trim_reason("token comes from the environment"),
             "token comes from the environment"
         );
+    }
+}
+
+#[cfg(test)]
+mod corpus_audit_tests {
+    use super::tests::corpus_dir;
+    use super::*;
+
+    /// A compromised corpus must be said before the number it invalidates, not
+    /// after. Whoever is reading a score stops at the score.
+    #[test]
+    fn a_leaking_corpus_is_announced_above_the_numbers() {
+        let outcome = Report {
+            report: BenchmarkReport { scores: Vec::new() },
+            unscanned: Vec::new(),
+            leaks: vec![Leak {
+                fixture: "c-memory".to_owned(),
+                file: "src/store.c".to_owned(),
+                line: 19,
+                phrase: "use after free".to_owned(),
+                text: "/* Use after free: the record is released ... */".to_owned(),
+            }],
+        };
+
+        let rendered = render(&outcome);
+
+        let warning = rendered
+            .find("GIVES ITS ANSWERS AWAY")
+            .expect("the warning");
+        let numbers = rendered.find("Detection").expect("the numbers");
+        assert!(warning < numbers, "{rendered}");
+        assert!(rendered.contains("src/store.c:19"), "{rendered}");
+        assert!(rendered.contains("measure reading and not"), "{rendered}");
+    }
+
+    /// And a clean corpus must not be nagged about.
+    #[test]
+    fn a_clean_corpus_says_nothing() {
+        let outcome = Report {
+            report: BenchmarkReport { scores: Vec::new() },
+            unscanned: Vec::new(),
+            leaks: Vec::new(),
+        };
+
+        assert!(!render(&outcome).contains("ANSWERS AWAY"));
+    }
+
+    /// The shipped corpus, through the command a person actually runs.
+    #[test]
+    fn the_shipped_corpus_is_audited_by_bench_itself() {
+        let empty = tempfile::tempdir().expect("a directory");
+
+        let outcome = run(
+            &corpus_dir().join("benchmark/ground-truth.json"),
+            empty.path(),
+            &corpus_dir(),
+        )
+        .expect("runs");
+
+        assert!(
+            outcome.leaks.is_empty(),
+            "{}",
+            outcome
+                .leaks
+                .iter()
+                .map(describe_leak)
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        // Proof the audit ran at all rather than finding nothing because it
+        // looked nowhere: the fixtures must be where the corpus says they are.
+        for fixture in [
+            "flask-injection",
+            "c-memory",
+            "node-traversal",
+            "clean-python",
+        ] {
+            assert!(
+                corpus_dir().join("fixtures").join(fixture).is_dir(),
+                "{fixture}"
+            );
+        }
+    }
+
+    /// A machine reading the score needs the same warning.
+    #[test]
+    fn the_structured_form_carries_the_leaks() {
+        let outcome = Report {
+            report: BenchmarkReport { scores: Vec::new() },
+            unscanned: Vec::new(),
+            leaks: vec![Leak {
+                fixture: "f".to_owned(),
+                file: "a.py".to_owned(),
+                line: 3,
+                phrase: "sql injection".to_owned(),
+                text: "# sql injection below".to_owned(),
+            }],
+        };
+
+        let structured = render_json(&outcome, &[]);
+
+        assert!(structured.contains("corpusLeaks"), "{structured}");
+        assert!(structured.contains("sql injection"), "{structured}");
     }
 }

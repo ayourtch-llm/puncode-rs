@@ -342,8 +342,42 @@ guarding nothing, which is worse than having no threshold at all.
 
 One finding can claim only one flaw and one flaw only one finding, so neither a
 single vague report nor ten copies of the same one can inflate the score.
+
+### The corpus audits itself
+
 Ground truth lives outside the fixtures, always: with the answers inside, an
-early run scored 2/2 and 3/3 and measured nothing at all.
+early run scored 2/2 and 3/3 and measured nothing at all. That was caught by a
+person reading the directory listing.
+
+The second time it was not. The rule covers comments, and `c-memory` named all
+three of its flaws in them while `clean-python`'s docstrings explained why each
+decoy was safe. It survived for days, and every number taken in that period was
+measuring reading rather than detection.
+
+Both times the corpus was checked by reading it, and both times reading it is
+what failed. So `bench` now reads it instead, on every run, and says so **above**
+the numbers rather than below them:
+
+```
+THE CORPUS GIVES ITS ANSWERS AWAY
+
+  c-memory/src/store.c:27 says "use after free" — /* Use after free: the record is …
+  clean-python/src/inventory.py:48 says "sql injection" — The query is built with an …
+
+A scan reads its whole target, so these numbers measure reading and not
+detection. Take the text out and run it again.
+```
+
+It looks for phrases that appear in writing *about* code rather than in code
+written to work — weakness class names, cited CWE identifiers, and notes
+claiming something is deliberate or safe. **It errs toward flagging**, which is
+the opposite of the choice made for [scan verification](#the-one-document-the-seal-cannot-check):
+that one speaks about somebody's real results, where crying wolf gets it
+switched off, while this one speaks about a test corpus its author reads. A
+false flag there costs one glance; a miss costs every number the corpus produces.
+
+The audit is checked against the corpus as it actually was before the fix — it
+finds all ten leaks — and against the corpus as it is now, on every test run.
 
 ## Checking results you were handed
 

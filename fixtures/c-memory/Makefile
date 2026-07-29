@@ -1,4 +1,4 @@
-# Deliberately built without hardening so the flaws stay reachable.
+# Built unoptimised and with symbols, for debugging.
 store: src/store.c
 	$(CC) -O0 -g -o store src/store.c
 

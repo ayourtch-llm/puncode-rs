@@ -305,6 +305,33 @@ work is done.
    `includePaths`/`excludePaths` have no schema description. That is why a
    weaker model never finds the rule. Worth reporting upstream.
 
+## The corpus checks itself now, because reading it failed twice
+
+A scan reads its whole target. Anything in a fixture that names what is planted
+turns detection into reading, and the number it produces is indistinguishable
+from a real one.
+
+It happened twice. First a README inside the fixture directory, caught by a
+person. Then comments in the source — `c-memory` named all three of its flaws,
+`clean-python`'s docstrings explained why each decoy was safe — which survived
+for days and invalidated every number taken in that period.
+
+`corpus_audit.rs` checks it now, and `bench` prints the result above the score.
+It also caught something on its first run that the by-hand pass had missed:
+`c-memory/Makefile` said "Deliberately built without hardening so the flaws stay
+reachable." Comments in `.c`, `.py` and `.js` had been reviewed; the Makefile
+had not.
+
+**When adding to a fixture, write comments as you would in code meant to work.**
+If a comment would help a reviewer find the bug, it will help the scanner too.
+The tell was there to be read for days: `node-traversal` is the only fixture
+that always had ordinary comments, and the only one that has ever failed to find
+something.
+
+The audit errs toward flagging, unlike `manifest_form`. Different subject,
+different cost: a false flag on a test corpus costs one glance, a miss costs
+every number.
+
 ## The ETXTBSY flake, and the rule for new suites
 
 Tests that write an executable stub and spawn it race on Linux. The suite runs

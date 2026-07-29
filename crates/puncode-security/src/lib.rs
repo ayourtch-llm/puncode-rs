@@ -12,6 +12,7 @@ pub mod codex;
 pub mod config;
 pub mod consensus;
 pub mod contract;
+pub mod corpus_audit;
 pub mod cost;
 pub mod diagnosis;
 pub mod endpoint_shim;
