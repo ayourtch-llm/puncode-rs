@@ -296,6 +296,35 @@ fn scan_once(options: &cli::ScanArgs) -> std::process::ExitCode {
     }
 }
 
+/// Checks a scan's results against themselves.
+///
+/// Exits 1 when they do not hold together. That is a result, not an error, in
+/// the same way a scan finding something is.
+fn verify(options: &cli::VerifyArgs) -> std::process::ExitCode {
+    let verification = match commands::verify::run(&options.scan_dir) {
+        Ok(verification) => verification,
+        Err(problem) => {
+            eprintln!("puncode-security: {problem}");
+            return std::process::ExitCode::from(exit::ERROR);
+        }
+    };
+
+    if options.output.resolved().is_structured() {
+        println!("{}", commands::verify::render_json(&verification));
+    } else {
+        println!(
+            "{}",
+            commands::verify::render(&verification, &options.scan_dir)
+        );
+    }
+
+    if verification.holds() {
+        std::process::ExitCode::from(exit::SUCCESS)
+    } else {
+        std::process::ExitCode::from(exit::FINDINGS)
+    }
+}
+
 /// Reports what would stop a scan.
 ///
 /// Exits 1 when something is broken, so a job can refuse to go on. A check that
@@ -501,6 +530,8 @@ fn main() -> std::process::ExitCode {
         // Returns early: a broken environment must exit non-zero so this can
         // gate a job.
         Command::Doctor(options) => return doctor(options),
+        // Returns early: results that do not hold together must exit non-zero.
+        Command::Verify(options) => return verify(options),
         Command::Export(options) => return export(options),
         Command::BulkScan(options) => commands::bulk_scan::run(
             options,

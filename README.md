@@ -249,6 +249,33 @@ single vague report nor ten copies of the same one can inflate the score.
 Ground truth lives outside the fixtures, always: with the answers inside, an
 early run scored 2/2 and 3/3 and measured nothing at all.
 
+## Checking results you were handed
+
+```sh
+puncode-security verify <scan-dir>
+```
+
+```
+  ok       documents agree with each other and with their digests
+  ok       2 finding(s), each matching its fingerprint
+  produced by  puncode-security 0.1.0, model …, endpoint …, SANDBOX DISABLED
+
+These results are internally consistent.
+The seals are digests, not signatures. They catch a document changed without
+resealing it; they cannot detect someone who changed it and resealed. And
+consistency is not correctness: nothing here says the findings are right.
+```
+
+Scan results get passed around — attached to a ticket, copied into a report,
+handed to someone who was not there when they were made. This answers the two
+questions the files do not: are they internally consistent, and what produced
+them. Nothing is re-run and nothing is contacted.
+
+Editing a finding is caught, including an edit that keeps the schema valid — the
+sealed digests do not match any more. What it cannot catch is somebody who
+changed a document *and* resealed it, which the output says rather than leaving
+you to assume otherwise.
+
 ## Knowing how a scan was produced
 
 Every scan writes `provenance.json` beside its findings:

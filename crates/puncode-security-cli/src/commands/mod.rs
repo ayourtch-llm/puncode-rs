@@ -21,4 +21,5 @@ pub mod progress;
 pub mod recipe;
 pub mod scan;
 pub mod skill;
+pub mod verify;
 pub mod wizard;

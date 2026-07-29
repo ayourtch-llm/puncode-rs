@@ -59,6 +59,8 @@ pub enum Command {
     Consensus(ConsensusArgs),
     /// Check what would stop a scan, before running one.
     Doctor(DoctorArgs),
+    /// Check that a scan's results are what the scan produced.
+    Verify(VerifyArgs),
 }
 
 /// A known incompatibility to work around when talking to an endpoint.
@@ -98,6 +100,16 @@ pub struct BenchArgs {
     /// Fail if more than this many findings matched nothing planted.
     #[arg(long, value_name = "N")]
     pub max_false_positives: Option<usize>,
+    #[command(flatten)]
+    pub output: OutputOptions,
+}
+
+/// Checking a scan's results against themselves.
+#[derive(Debug, Args)]
+pub struct VerifyArgs {
+    /// The scan directory to check.
+    #[arg(value_name = "SCAN_DIR")]
+    pub scan_dir: PathBuf,
     #[command(flatten)]
     pub output: OutputOptions,
 }
