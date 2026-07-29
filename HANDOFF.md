@@ -329,8 +329,21 @@ work is done.
 3. **No control run against a stronger model.** Everything concluded about model
    behaviour comes from one local model over ~10 runs. A hosted run would
    separate general behaviour from this model's habits.
-4. **`--exclude` does not exist.** If it is ever added, registration must carry
-   it and the hard-coded `excludePaths: []` in `prompt.rs` becomes wrong.
+4. **`--exclude` cannot exist, and that is settled.** It was recorded here as
+   "if it is ever added…". It cannot be. `scan_contract` returns
+   `"requiredExcludePaths": []` as a literal, and the check is literal too:
+
+   ```python
+   # workbench_db.py:722
+   if scope.get("excludePaths") != []:
+       raise SystemExit("scan-manifest.json scope excludePaths must match ...")
+   ```
+
+   No scan may carry a non-empty `excludePaths` at all. So the hard-coded `[]`
+   in `prompt.rs` is not a latent bug waiting on a feature — it is the only legal
+   value, and the prompt line telling the agent so is load-bearing. Adding
+   `--exclude` needs an upstream change first, which is in
+   [docs/upstream-report.md](docs/upstream-report.md).
 5. **Upstream feedback.** Written up in [docs/upstream-report.md](docs/upstream-report.md),
    with every claim re-checked against the shipped package rather than recalled:
    `allowedKinds` appears in one file and no skill, 0 of 141 schema properties
@@ -497,6 +510,18 @@ truth**, so the provenance is part of the record and a reader can discount it.
 
 The real findings document from that run is checked in as a fixture, and
 removing the class pass makes those tests fail — checked by removing it.
+
+## Things measured and deliberately not built
+
+Worth recording so nobody spends a beat rediscovering them.
+
+**`report.md` against `findings.json`.** A report that silently omits a finding
+would be a real defect and is exactly checkable — every finding should be named
+in the report by id or by the file it cites. Measured across **26 real scans on
+disk**: every finding appeared in every report, no exceptions. A check that
+would have fired zero times in twenty-six samples is not worth the code, so it
+was not written. If a report ever does come up short, this is the shape of the
+check to write, and the number above is the baseline to beat.
 
 ## The ETXTBSY flake, and the rule for new suites
 
