@@ -163,6 +163,14 @@ callbacks.
 The security plugin under `crates/puncode-security/plugin/` is redistributed
 **verbatim and unmodified** from the upstream project. See [NOTICE](NOTICE).
 
+## Contributing
+
+[HANDOFF.md](HANDOFF.md) carries the working knowledge that is not recoverable
+from the commits: which names are interoperation rather than branding and must
+never be renamed, why this environment needs `--yolo`, workbench constraints
+that look like bugs, and three confident diagnoses that turned out to be wrong.
+Worth reading before changing anything in `api/prompt.rs` or renaming anything.
+
 ## Licence
 
 Apache-2.0, the same as the original project. See [LICENSE](LICENSE) and
