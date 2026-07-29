@@ -198,6 +198,41 @@ fn scan(options: &cli::ScanArgs) -> std::process::ExitCode {
     }
 }
 
+/// Scores scans against the corpus, failing when a threshold is not met.
+///
+/// Exits 1 for a shortfall rather than 2, matching `scan`: a measurement that
+/// came out badly is a result, not an error.
+fn bench(options: &cli::BenchArgs) -> std::process::ExitCode {
+    let outcome = match commands::bench::run(
+        &options.ground_truth,
+        &options.results,
+        &options.corpus_root,
+    ) {
+        Ok(outcome) => outcome,
+        Err(problem) => {
+            eprintln!("puncode-security: {problem}");
+            return std::process::ExitCode::from(exit::ERROR);
+        }
+    };
+
+    let shortfalls =
+        commands::bench::shortfalls(&outcome, options.min_detection, options.max_false_positives);
+
+    if options.output.resolved().is_structured() {
+        println!("{}", commands::bench::render_json(&outcome, &shortfalls));
+    } else {
+        println!("{}", commands::bench::render(&outcome));
+    }
+
+    if shortfalls.is_empty() {
+        return std::process::ExitCode::from(exit::SUCCESS);
+    }
+    for shortfall in &shortfalls {
+        eprintln!("puncode-security: {}", shortfall.describe());
+    }
+    std::process::ExitCode::from(exit::FINDINGS)
+}
+
 /// Says where a stopped scan left what it had produced.
 ///
 /// Naming the directory matters more here than anywhere else: the person is
@@ -274,15 +309,14 @@ fn main() -> std::process::ExitCode {
     let outcome = match command {
         Command::Info(options) => commands::info::run(options),
         Command::Logout => commands::logout::run(&std::env::vars().collect()),
-        Command::Consensus(options) => {
-            commands::consensus::run(&options.directories, options.min_agreement)
-        }
-        Command::Bench(options) => commands::bench::run(
-            &options.ground_truth,
-            &options.results,
-            &options.corpus_root,
-        )
-        .map(|outcome| commands::bench::render(&outcome)),
+        Command::Consensus(options) => commands::consensus::run(
+            &options.directories,
+            options.min_agreement,
+            options.output.resolved().is_structured(),
+        ),
+        // Returns early: a run that fell short of its thresholds must exit
+        // non-zero, which the shared success path cannot express.
+        Command::Bench(options) => return bench(options),
         Command::Export(options) => return export(options),
         Command::BulkScan(options) => commands::bulk_scan::run(
             options,

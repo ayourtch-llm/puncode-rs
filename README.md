@@ -153,19 +153,26 @@ puncode-security bench /tmp/puncode-fixture-scans/<run>
 Detection
 
   flask-injection      2 of 2 found
-  c-memory             2 of 3 found   missed: off-by-one
+  c-memory             3 of 3 found
   node-traversal       2 of 3 found   missed: timing-unsafe-compare
   clean-python         control — 0 false positive(s)
 
-  detection      75%  (6 of 8)
-  unmatched      1  (0 on fixtures with nothing planted)
+  detection      88%  (7 of 8)
+  unmatched      0  (0 on fixtures with nothing planted)
 
 By class
 
-  CWE-22           1 of 1
-  CWE-416          1 of 1
-  CWE-193          0 of 1
+  CWE-22           1 of 1      CWE-121          1 of 1
+  CWE-78           1 of 1      CWE-193          1 of 1
+  CWE-89           1 of 1      CWE-208          0 of 1
+  CWE-918          1 of 1      CWE-416          1 of 1
 ```
+
+Real output, from a 35B model running locally. It found injection, command
+injection, traversal, SSRF, a stack overflow, a use-after-free and an off-by-one,
+and missed the timing-unsafe comparison — which is the subtlest thing in the
+corpus and exactly the kind of detail a per-class breakdown exists to surface.
+Nothing was reported against the clean fixture.
 
 Three deliberate choices:
 
@@ -178,6 +185,20 @@ Three deliberate choices:
   it finds nothing at all.
 - **A rate over nothing is reported as unmeasured, not as zero.** They are
   different facts, and zero reads as total failure.
+
+### Using it as a gate
+
+```sh
+puncode-security bench <results> --min-detection 0.8 --max-false-positives 0
+```
+
+Exits 1 when a run falls short, so a corpus can guard against a change that
+quietly makes detection worse. `--json` gives the same numbers, including which
+flaws were missed, for a CI job to consume.
+
+A floor set against a corpus that plants nothing is **refused, not passed**. A
+threshold that succeeds without measuring anything reports as a guard while
+guarding nothing, which is worse than having no threshold at all.
 
 One finding can claim only one flaw and one flaw only one finding, so neither a
 single vague report nor ten copies of the same one can inflate the score.

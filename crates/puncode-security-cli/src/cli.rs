@@ -86,6 +86,16 @@ pub struct BenchArgs {
     /// Root the corpus paths are relative to.
     #[arg(long, value_name = "DIR", default_value = ".")]
     pub corpus_root: PathBuf,
+    /// Fail unless at least this share of planted flaws was found (0.0-1.0).
+    ///
+    /// A corpus that plants nothing cannot satisfy this, and is refused rather
+    /// than passed: a floor that succeeds without measuring anything reports as
+    /// a guard while guarding nothing.
+    #[arg(long, value_name = "RATE")]
+    pub min_detection: Option<f64>,
+    /// Fail if more than this many findings matched nothing planted.
+    #[arg(long, value_name = "N")]
+    pub max_false_positives: Option<usize>,
     #[command(flatten)]
     pub output: OutputOptions,
 }
@@ -102,6 +112,8 @@ pub struct ConsensusArgs {
     /// most carefully, so hiding it is a choice to make deliberately.
     #[arg(long, value_name = "N")]
     pub min_agreement: Option<usize>,
+    #[command(flatten)]
+    pub output: OutputOptions,
 }
 
 /// Request shape an OpenAI-compatible endpoint speaks.

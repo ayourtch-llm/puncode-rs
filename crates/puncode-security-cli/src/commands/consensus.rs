@@ -11,7 +11,11 @@ use puncode_security::consensus::{AgreedFinding, merge, summarise};
 use serde_json::Value;
 
 /// Compares the findings of several scan directories.
-pub fn run(directories: &[PathBuf], minimum: Option<usize>) -> Result<String, String> {
+pub fn run(
+    directories: &[PathBuf],
+    minimum: Option<usize>,
+    structured: bool,
+) -> Result<String, String> {
     if directories.len() < 2 {
         return Err("Comparing runs needs at least two scan directories.".to_owned());
     }
@@ -22,7 +26,44 @@ pub fn run(directories: &[PathBuf], minimum: Option<usize>) -> Result<String, St
     }
 
     let merged = merge(&runs);
+    if structured {
+        return Ok(render_json(&merged, directories.len(), minimum));
+    }
     Ok(render(&merged, directories, minimum))
+}
+
+/// The same comparison, for another program.
+fn render_json(merged: &[AgreedFinding], total: usize, minimum: Option<usize>) -> String {
+    let summary = summarise(merged, total);
+    let findings: Vec<Value> = merged
+        .iter()
+        .filter(|finding| minimum.is_none_or(|least| finding.agreement() >= least))
+        .map(|finding| {
+            serde_json::json!({
+                "headline": finding.headline(),
+                "titles": finding.titles,
+                "agreement": finding.agreement(),
+                "totalRuns": finding.total_runs,
+                "runs": finding.runs,
+                "severities": finding.severities,
+                "severityDisputed": finding.severity_disputed(),
+            })
+        })
+        .collect();
+
+    serde_json::to_string_pretty(&serde_json::json!({
+        "totalRuns": summary.total_runs,
+        "distinct": summary.distinct,
+        "unanimous": summary.unanimous,
+        "solitary": summary.solitary,
+        "severityDisputes": summary.severity_disputes,
+        "hidden": summary.distinct - findings.len(),
+        "findings": findings,
+        // Carried in the data too: a program summarising this for a human
+        // should be able to pass the caveat along.
+        "caveat": "Agreement measures stability, not correctness. Runs sharing a blind spot agree as readily as runs being right.",
+    }))
+    .unwrap_or_else(|error| format!("{{\"error\":\"{error}\"}}"))
 }
 
 /// The findings of one scan directory.
@@ -179,7 +220,7 @@ mod tests {
     fn refuses_fewer_than_two_runs() {
         let one = scan_dir(json!([]));
 
-        let refused = run(&[one.path().to_path_buf()], None);
+        let refused = run(&[one.path().to_path_buf()], None, false);
 
         assert!(refused.expect_err("a refusal").contains("at least two"));
     }
@@ -194,8 +235,12 @@ mod tests {
             { "title": "SQLi via name", "locations": [{ "path": "app.py", "startLine": 10 }] },
         ]));
 
-        let rendered =
-            run(&[a.path().to_path_buf(), b.path().to_path_buf()], None).expect("compares");
+        let rendered = run(
+            &[a.path().to_path_buf(), b.path().to_path_buf()],
+            None,
+            false,
+        )
+        .expect("compares");
 
         assert!(rendered.contains("2 of 2"), "{rendered}");
         assert!(rendered.contains("1 of 2"), "{rendered}");
@@ -209,8 +254,12 @@ mod tests {
         let a = scan_dir(json!([]));
         let b = scan_dir(json!([]));
 
-        let rendered =
-            run(&[a.path().to_path_buf(), b.path().to_path_buf()], None).expect("compares");
+        let rendered = run(
+            &[a.path().to_path_buf(), b.path().to_path_buf()],
+            None,
+            false,
+        )
+        .expect("compares");
 
         assert!(
             rendered.contains("stability, not correctness"),
@@ -225,8 +274,12 @@ mod tests {
         ]));
         let b = scan_dir(json!([]));
 
-        let rendered =
-            run(&[a.path().to_path_buf(), b.path().to_path_buf()], Some(2)).expect("compares");
+        let rendered = run(
+            &[a.path().to_path_buf(), b.path().to_path_buf()],
+            Some(2),
+            false,
+        )
+        .expect("compares");
 
         assert!(
             rendered.contains("1 hidden by --min-agreement"),
@@ -245,8 +298,12 @@ mod tests {
               "locations": [{ "path": "app.py", "startLine": 10 }] },
         ]));
 
-        let rendered =
-            run(&[a.path().to_path_buf(), b.path().to_path_buf()], None).expect("compares");
+        let rendered = run(
+            &[a.path().to_path_buf(), b.path().to_path_buf()],
+            None,
+            false,
+        )
+        .expect("compares");
 
         assert!(rendered.contains("severity disputed"), "{rendered}");
     }
@@ -258,8 +315,97 @@ mod tests {
         let refused = run(
             &[a.path().to_path_buf(), PathBuf::from("/nowhere/at/all")],
             None,
+            false,
         );
 
         assert!(refused.expect_err("a refusal").contains("/nowhere/at/all"));
+    }
+}
+
+#[cfg(test)]
+mod json_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn scan_dir(findings: Value) -> tempfile::TempDir {
+        let directory = tempfile::tempdir().expect("a directory");
+        std::fs::write(
+            directory.path().join("findings.json"),
+            json!({ "findings": findings }).to_string(),
+        )
+        .expect("writes");
+        directory
+    }
+
+    #[test]
+    fn structured_output_carries_the_counts() {
+        let a = scan_dir(json!([
+            { "title": "SQLi", "locations": [{ "path": "app.py", "startLine": 10 }] },
+        ]));
+        let b = scan_dir(json!([
+            { "title": "SQL injection", "locations": [{ "path": "app.py", "startLine": 10 }] },
+        ]));
+
+        let rendered = run(
+            &[a.path().to_path_buf(), b.path().to_path_buf()],
+            None,
+            true,
+        )
+        .expect("compares");
+        let parsed: Value = serde_json::from_str(&rendered).expect("valid JSON");
+
+        assert_eq!(parsed["distinct"], 1);
+        assert_eq!(parsed["unanimous"], 1);
+        assert_eq!(parsed["findings"][0]["agreement"], 2);
+        assert_eq!(
+            parsed["findings"][0]["titles"]
+                .as_array()
+                .expect("titles")
+                .len(),
+            2
+        );
+    }
+
+    /// A program summarising this for a person should be able to pass the
+    /// caveat along, so it travels with the data rather than only on screen.
+    #[test]
+    fn structured_output_carries_the_caveat() {
+        let a = scan_dir(json!([]));
+        let b = scan_dir(json!([]));
+
+        let rendered = run(
+            &[a.path().to_path_buf(), b.path().to_path_buf()],
+            None,
+            true,
+        )
+        .expect("compares");
+        let parsed: Value = serde_json::from_str(&rendered).expect("valid JSON");
+
+        assert!(
+            parsed["caveat"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("not correctness"),
+            "{parsed}"
+        );
+    }
+
+    #[test]
+    fn structured_output_counts_what_it_hid() {
+        let a = scan_dir(json!([
+            { "title": "once", "locations": [{ "path": "app.py", "startLine": 10 }] },
+        ]));
+        let b = scan_dir(json!([]));
+
+        let rendered = run(
+            &[a.path().to_path_buf(), b.path().to_path_buf()],
+            Some(2),
+            true,
+        )
+        .expect("compares");
+        let parsed: Value = serde_json::from_str(&rendered).expect("valid JSON");
+
+        assert_eq!(parsed["hidden"], 1);
+        assert_eq!(parsed["findings"].as_array().expect("findings").len(), 0);
     }
 }

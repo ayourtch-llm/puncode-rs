@@ -8,7 +8,8 @@
 use std::path::Path;
 
 use puncode_security::benchmark::{
-    BenchmarkReport, GroundTruth, ReportedFinding, ReportedLocation, score_fixture,
+    BenchmarkReport, GroundTruth, ReportedFinding, ReportedLocation, Shortfall, Thresholds,
+    score_fixture,
 };
 use serde_json::Value;
 
@@ -108,6 +109,68 @@ fn locations(item: &Value, prefix: &Path) -> Vec<ReportedLocation> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// The same numbers, for another program.
+///
+/// Includes what was missed and what matched nothing, because a machine reading
+/// this is usually deciding whether something regressed, and a bare rate cannot
+/// say which flaw stopped being found.
+#[must_use]
+pub fn render_json(outcome: &Report, shortfalls: &[Shortfall]) -> String {
+    let report = &outcome.report;
+    let fixtures: Vec<Value> = report
+        .scores
+        .iter()
+        .map(|score| {
+            serde_json::json!({
+                "fixture": score.fixture,
+                "control": score.control,
+                "planted": score.planted(),
+                "found": score.found(),
+                "missed": score.missed(),
+                "unmatched": score.unmatched,
+            })
+        })
+        .collect();
+    let by_class: serde_json::Map<String, Value> = report
+        .by_cwe()
+        .into_iter()
+        .map(|(class, (found, planted))| {
+            (
+                class,
+                serde_json::json!({ "found": found, "planted": planted }),
+            )
+        })
+        .collect();
+
+    serde_json::to_string_pretty(&serde_json::json!({
+        // Absent rather than zero when nothing was planted: an undefined rate
+        // and a rate of zero are different facts.
+        "detectionRate": report.detection_rate(),
+        "planted": report.planted(),
+        "found": report.found(),
+        "falsePositives": report.false_positives(),
+        "controlFalsePositives": report.control_false_positives(),
+        "fixtures": fixtures,
+        "byClass": by_class,
+        "unscanned": outcome.unscanned,
+        "shortfalls": shortfalls.iter().map(Shortfall::describe).collect::<Vec<_>>(),
+    }))
+    .unwrap_or_else(|error| format!("{{\"error\":\"{error}\"}}"))
+}
+
+/// Every way the run fell short of what was asked of it.
+#[must_use]
+pub fn shortfalls(
+    outcome: &Report,
+    min_detection: Option<f64>,
+    max_false_positives: Option<usize>,
+) -> Vec<Shortfall> {
+    outcome.report.shortfalls(&Thresholds {
+        min_detection,
+        max_false_positives,
+    })
 }
 
 /// The report, for a person.

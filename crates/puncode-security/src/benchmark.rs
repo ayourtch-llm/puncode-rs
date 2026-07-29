@@ -294,6 +294,82 @@ impl BenchmarkReport {
     }
 }
 
+/// What a run must reach to be considered acceptable.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Thresholds {
+    /// Least acceptable share of planted flaws found, in `0.0..=1.0`.
+    pub min_detection: Option<f64>,
+    /// Most acceptable findings that matched nothing planted.
+    pub max_false_positives: Option<usize>,
+}
+
+/// Why a run was judged unacceptable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Shortfall {
+    /// Detection was below the floor.
+    Detection { required: String, actual: String },
+    /// Too many findings matched nothing planted.
+    FalsePositives { allowed: usize, actual: usize },
+    /// A detection floor was set, but nothing was planted to detect.
+    ///
+    /// Not a pass. A threshold checked against an undefined rate that quietly
+    /// succeeds is worse than no threshold, because it reports as a guard while
+    /// guarding nothing.
+    NothingToDetect { required: String },
+}
+
+impl Shortfall {
+    #[must_use]
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Detection { required, actual } => {
+                format!("detection {actual} is below the required {required}")
+            }
+            Self::FalsePositives { allowed, actual } => {
+                format!(
+                    "{actual} findings matched nothing planted, more than the {allowed} allowed"
+                )
+            }
+            Self::NothingToDetect { required } => format!(
+                "a detection floor of {required} was set, but the corpus plants nothing to detect"
+            ),
+        }
+    }
+}
+
+impl BenchmarkReport {
+    /// Every way the run fell short of what was asked of it.
+    #[must_use]
+    pub fn shortfalls(&self, thresholds: &Thresholds) -> Vec<Shortfall> {
+        let mut found = Vec::new();
+
+        if let Some(required) = thresholds.min_detection {
+            match self.detection_rate() {
+                Some(rate) if rate + f64::EPSILON < required => {
+                    found.push(Shortfall::Detection {
+                        required: format!("{:.0}%", required * 100.0),
+                        actual: format!("{:.0}%", rate * 100.0),
+                    });
+                }
+                Some(_) => {}
+                // Refused rather than passed: see Shortfall::NothingToDetect.
+                None => found.push(Shortfall::NothingToDetect {
+                    required: format!("{:.0}%", required * 100.0),
+                }),
+            }
+        }
+
+        if let Some(allowed) = thresholds.max_false_positives {
+            let actual = self.false_positives();
+            if actual > allowed {
+                found.push(Shortfall::FalsePositives { allowed, actual });
+            }
+        }
+
+        found
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -588,5 +664,127 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod threshold_tests {
+    use super::*;
+
+    fn report(found: usize, planted: usize, unmatched: usize) -> BenchmarkReport {
+        let outcomes = (0..planted)
+            .map(|index| FlawOutcome {
+                flaw_id: format!("f{index}"),
+                cwe: None,
+                found_as: (index < found).then(|| "found".to_owned()),
+            })
+            .collect();
+        BenchmarkReport {
+            scores: vec![FixtureScore {
+                fixture: "f".to_owned(),
+                control: false,
+                outcomes,
+                unmatched: (0..unmatched).map(|i| format!("noise {i}")).collect(),
+            }],
+        }
+    }
+
+    #[test]
+    fn a_run_that_meets_its_floor_has_nothing_to_report() {
+        let thresholds = Thresholds {
+            min_detection: Some(0.8),
+            max_false_positives: Some(1),
+        };
+
+        assert!(report(4, 5, 1).shortfalls(&thresholds).is_empty());
+    }
+
+    #[test]
+    fn detection_below_the_floor_is_a_shortfall() {
+        let thresholds = Thresholds {
+            min_detection: Some(0.8),
+            ..Thresholds::default()
+        };
+
+        let shortfalls = report(2, 5, 0).shortfalls(&thresholds);
+
+        assert_eq!(shortfalls.len(), 1);
+        assert!(shortfalls[0].describe().contains("40%"), "{shortfalls:?}");
+    }
+
+    /// A floor met exactly is met. Floating point must not turn 80% into a
+    /// failure against a floor of 80%.
+    #[test]
+    fn a_floor_met_exactly_passes() {
+        let thresholds = Thresholds {
+            min_detection: Some(0.8),
+            ..Thresholds::default()
+        };
+
+        assert!(report(4, 5, 0).shortfalls(&thresholds).is_empty());
+    }
+
+    /// The bug this guards against: a threshold that passes because there was
+    /// nothing to measure reports as a guard while guarding nothing.
+    #[test]
+    fn a_floor_against_an_empty_corpus_is_refused_not_passed() {
+        let thresholds = Thresholds {
+            min_detection: Some(0.8),
+            ..Thresholds::default()
+        };
+        let empty = BenchmarkReport { scores: Vec::new() };
+
+        let shortfalls = empty.shortfalls(&thresholds);
+
+        assert_eq!(shortfalls.len(), 1, "an unmeasurable floor must not pass");
+        assert!(
+            matches!(shortfalls[0], Shortfall::NothingToDetect { .. }),
+            "{shortfalls:?}"
+        );
+    }
+
+    #[test]
+    fn too_much_noise_is_a_shortfall() {
+        let thresholds = Thresholds {
+            max_false_positives: Some(1),
+            ..Thresholds::default()
+        };
+
+        let shortfalls = report(5, 5, 3).shortfalls(&thresholds);
+
+        assert_eq!(shortfalls.len(), 1);
+        assert!(shortfalls[0].describe().contains('3'), "{shortfalls:?}");
+    }
+
+    /// Zero tolerated means zero, not "a few".
+    #[test]
+    fn a_zero_allowance_admits_no_noise() {
+        let thresholds = Thresholds {
+            max_false_positives: Some(0),
+            ..Thresholds::default()
+        };
+
+        assert!(report(5, 5, 0).shortfalls(&thresholds).is_empty());
+        assert_eq!(report(5, 5, 1).shortfalls(&thresholds).len(), 1);
+    }
+
+    /// Both can fail at once, and a caller fixing one should see the other.
+    #[test]
+    fn reports_every_way_a_run_fell_short() {
+        let thresholds = Thresholds {
+            min_detection: Some(0.9),
+            max_false_positives: Some(0),
+        };
+
+        assert_eq!(report(1, 5, 2).shortfalls(&thresholds).len(), 2);
+    }
+
+    #[test]
+    fn asking_for_nothing_judges_nothing() {
+        assert!(
+            report(0, 5, 9)
+                .shortfalls(&Thresholds::default())
+                .is_empty()
+        );
     }
 }
