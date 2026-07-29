@@ -1,0 +1,160 @@
+{
+  "preflight": {
+    "empty": {
+      "ok": {}
+    },
+    "typical": {
+      "ok": {
+        "model": "gpt-5.6-sol",
+        "model_reasoning_effort": "xhigh",
+        "model_provider": "openai",
+        "service_tier": "default",
+        "features": {
+          "goals": true,
+          "multi_agent": false,
+          "enable_fanout": true,
+          "multi_agent_v2": {
+            "enabled": true,
+            "max_concurrent_threads_per_session": 9
+          }
+        },
+        "agents": {
+          "max_threads": 4,
+          "max_depth": 2
+        },
+        "multiagent_config": {
+          "max_concurrency": 3
+        },
+        "profile": "deep-scan"
+      }
+    },
+    "secret_shaped_values": {
+      "ok": {
+        "model_reasoning_effort": "high"
+      }
+    },
+    "secretish_words": {
+      "ok": {}
+    },
+    "lookalikes": {
+      "ok": {
+        "model": "monkey",
+        "model_provider": "keystone",
+        "service_tier": "tokenizer"
+      }
+    },
+    "control_characters": {
+      "ok": {
+        "model_provider": "ok-provider"
+      }
+    },
+    "oversized_values": {
+      "ok": {
+        "model_provider": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+      }
+    },
+    "unknown_settings": {
+      "ok": {
+        "model": "gpt-5.6"
+      }
+    },
+    "bad_features": {
+      "ok": {}
+    },
+    "v2_boolean": {
+      "ok": {
+        "features": {
+          "multi_agent_v2": true
+        }
+      }
+    },
+    "v2_empty_object": {
+      "ok": {}
+    },
+    "bad_agents": {
+      "ok": {}
+    },
+    "agents_at_limit": {
+      "ok": {
+        "agents": {
+          "max_threads": 1000000,
+          "max_depth": 0
+        }
+      }
+    },
+    "profiles": {
+      "ok": {
+        "profiles": {
+          "good-1": {
+            "model": "gpt-5.6"
+          }
+        }
+      }
+    },
+    "root_markers": {
+      "ok": {
+        "project_root_markers": [
+          ".git",
+          "Cargo.toml"
+        ]
+      }
+    },
+    "projects": {
+      "ok": {
+        "projects": {
+          "/abs/trusted": {
+            "trust_level": "trusted"
+          },
+          "/abs/untrusted": {
+            "trust_level": "untrusted"
+          }
+        }
+      }
+    },
+    "bad_profile_name": {
+      "ok": {}
+    }
+  },
+  "runtime": {
+    "empty": {
+      "allow_login_shell": false,
+      "default_permissions": "codex_security_scan",
+      "permissions": {
+        "codex_security_scan": {
+          "filesystem": {
+            ":root": "read",
+            ":workspace_roots": "write"
+          }
+        }
+      }
+    },
+    "with_sandbox": {
+      "model": "gpt-5.6",
+      "allow_login_shell": false,
+      "default_permissions": "codex_security_scan",
+      "permissions": {
+        "codex_security_scan": {
+          "filesystem": {
+            ":root": "read",
+            ":workspace_roots": "write"
+          }
+        }
+      }
+    },
+    "with_permissions": {
+      "permissions": {
+        "existing": {
+          "filesystem": {}
+        },
+        "codex_security_scan": {
+          "filesystem": {
+            ":root": "read",
+            ":workspace_roots": "write"
+          }
+        }
+      },
+      "allow_login_shell": false,
+      "default_permissions": "codex_security_scan"
+    }
+  }
+}

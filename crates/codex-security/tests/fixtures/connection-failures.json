@@ -1,0 +1,462 @@
+[
+  {
+    "message": "rate limit exceeded",
+    "classification": "rate_limited",
+    "attempt": null,
+    "details": {
+      "reason": "rate_limit"
+    }
+  },
+  {
+    "message": "Rate-Limited",
+    "classification": "rate_limited",
+    "attempt": null,
+    "details": {
+      "reason": "rate_limit"
+    }
+  },
+  {
+    "message": "RATE_LIMIT",
+    "classification": "rate_limited",
+    "attempt": null,
+    "details": {
+      "reason": "rate_limit"
+    }
+  },
+  {
+    "message": "429 Too Many Requests",
+    "classification": "rate_limited",
+    "attempt": null,
+    "details": {
+      "reason": "rate_limit"
+    }
+  },
+  {
+    "message": "too many requests",
+    "classification": "rate_limited",
+    "attempt": null,
+    "details": {
+      "reason": "rate_limit"
+    }
+  },
+  {
+    "message": "ratelimited",
+    "classification": "rate_limited",
+    "attempt": null,
+    "details": {
+      "reason": "rate_limit"
+    }
+  },
+  {
+    "message": "the rate limiter is warm",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "401 Unauthorized",
+    "classification": "unauthorized",
+    "attempt": null,
+    "details": {
+      "reason": "authentication"
+    }
+  },
+  {
+    "message": "unauthorised",
+    "classification": "unauthorized",
+    "attempt": null,
+    "details": {
+      "reason": "authentication"
+    }
+  },
+  {
+    "message": "invalid api key",
+    "classification": "unauthorized",
+    "attempt": null,
+    "details": {
+      "reason": "authentication"
+    }
+  },
+  {
+    "message": "invalid_api-key",
+    "classification": "unauthorized",
+    "attempt": null,
+    "details": {
+      "reason": "authentication"
+    }
+  },
+  {
+    "message": "expired token",
+    "classification": "unauthorized",
+    "attempt": null,
+    "details": {
+      "reason": "authentication"
+    }
+  },
+  {
+    "message": "credentials have expired",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "the api key has been revoked",
+    "classification": "unauthorized",
+    "attempt": null,
+    "details": {
+      "reason": "authentication"
+    }
+  },
+  {
+    "message": "403 Forbidden",
+    "classification": "forbidden",
+    "attempt": null,
+    "details": {
+      "reason": "authorization"
+    }
+  },
+  {
+    "message": "permission denied",
+    "classification": "forbidden",
+    "attempt": null,
+    "details": {
+      "reason": "authorization"
+    }
+  },
+  {
+    "message": "model access is not enabled",
+    "classification": "forbidden",
+    "attempt": null,
+    "details": {
+      "reason": "authorization"
+    }
+  },
+  {
+    "message": "organization access",
+    "classification": "forbidden",
+    "attempt": null,
+    "details": {
+      "reason": "authorization"
+    }
+  },
+  {
+    "message": "do not have access",
+    "classification": "forbidden",
+    "attempt": null,
+    "details": {
+      "reason": "authorization"
+    }
+  },
+  {
+    "message": "insufficient permissions",
+    "classification": "forbidden",
+    "attempt": null,
+    "details": {
+      "reason": "authorization"
+    }
+  },
+  {
+    "message": "model_not_found",
+    "classification": "forbidden",
+    "attempt": null,
+    "details": {
+      "reason": "authorization"
+    }
+  },
+  {
+    "message": "model-not-found",
+    "classification": "forbidden",
+    "attempt": null,
+    "details": {
+      "reason": "authorization"
+    }
+  },
+  {
+    "message": "ENOTFOUND api.openai.com",
+    "classification": "network_error",
+    "attempt": null,
+    "details": {
+      "reason": "network"
+    }
+  },
+  {
+    "message": "ECONNRESET",
+    "classification": "network_error",
+    "attempt": null,
+    "details": {
+      "reason": "network"
+    }
+  },
+  {
+    "message": "connection reset by peer",
+    "classification": "network_error",
+    "attempt": null,
+    "details": {
+      "reason": "network"
+    }
+  },
+  {
+    "message": "TLS handshake failed",
+    "classification": "network_error",
+    "attempt": null,
+    "details": {
+      "reason": "network"
+    }
+  },
+  {
+    "message": "DNS lookup failed",
+    "classification": "network_error",
+    "attempt": null,
+    "details": {
+      "reason": "network"
+    }
+  },
+  {
+    "message": "error sending request",
+    "classification": "network_error",
+    "attempt": null,
+    "details": {
+      "reason": "network"
+    }
+  },
+  {
+    "message": "the network is unreachable",
+    "classification": "network_error",
+    "attempt": null,
+    "details": {
+      "reason": "network"
+    }
+  },
+  {
+    "message": "request timed out",
+    "classification": "timeout",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "timeout while reading",
+    "classification": "timeout",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "operation timeout",
+    "classification": "timeout",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "something else entirely",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "  ",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "429 rate limit; connection will retry",
+    "classification": "rate_limited",
+    "attempt": null,
+    "details": {
+      "reason": "rate_limit"
+    }
+  },
+  {
+    "message": "unauthorized network failure",
+    "classification": "unauthorized",
+    "attempt": null,
+    "details": {
+      "reason": "authentication"
+    }
+  },
+  {
+    "message": "Reconnecting... 1/5",
+    "classification": "unknown",
+    "attempt": [
+      1,
+      5
+    ],
+    "details": null
+  },
+  {
+    "message": "Reconnecting… 2/5",
+    "classification": "unknown",
+    "attempt": [
+      2,
+      5
+    ],
+    "details": null
+  },
+  {
+    "message": "Reconnecting...  3/10 (rate limited)",
+    "classification": "rate_limited",
+    "attempt": [
+      3,
+      10
+    ],
+    "details": {
+      "reason": "rate_limit"
+    }
+  },
+  {
+    "message": "Reconnecting... 5/5",
+    "classification": "unknown",
+    "attempt": [
+      5,
+      5
+    ],
+    "details": null
+  },
+  {
+    "message": "Reconnecting... 6/5",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "Reconnecting... 0/5",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "Reconnecting...1/5",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "Reconnecting... 1/5x",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "reconnecting... 1/5",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "Reconnecting... 1000/5",
+    "classification": "unknown",
+    "attempt": null,
+    "details": null
+  },
+  {
+    "message": "Reconnecting... 1/5(",
+    "classification": "unknown",
+    "attempt": [
+      1,
+      5
+    ],
+    "details": null
+  },
+  {
+    "message": "Reconnecting... 12/34\ttail",
+    "classification": "unknown",
+    "attempt": [
+      12,
+      34
+    ],
+    "details": null
+  },
+  {
+    "message": "Reconnecting... 2/5 rate limit exceeded, try again in 30 seconds",
+    "classification": "rate_limited",
+    "attempt": [
+      2,
+      5
+    ],
+    "details": {
+      "reason": "rate_limit",
+      "retryAfterSeconds": 30
+    }
+  },
+  {
+    "message": "Reconnecting... 2/5 rate limited; retry in 1.5s",
+    "classification": "rate_limited",
+    "attempt": [
+      2,
+      5
+    ],
+    "details": {
+      "reason": "rate_limit",
+      "retryAfterSeconds": 1.5
+    }
+  },
+  {
+    "message": "Reconnecting... 2/5 rate limited; try again in 7200 seconds",
+    "classification": "rate_limited",
+    "attempt": [
+      2,
+      5
+    ],
+    "details": {
+      "reason": "rate_limit"
+    }
+  },
+  {
+    "message": "Reconnecting... 2/5 rate limited; try again in 0 seconds",
+    "classification": "rate_limited",
+    "attempt": [
+      2,
+      5
+    ],
+    "details": {
+      "reason": "rate_limit"
+    }
+  },
+  {
+    "message": "Reconnecting... 2/5 ECONNRESET",
+    "classification": "network_error",
+    "attempt": [
+      2,
+      5
+    ],
+    "details": {
+      "reason": "network"
+    }
+  },
+  {
+    "message": "Reconnecting... 2/5 401 unauthorized",
+    "classification": "unauthorized",
+    "attempt": [
+      2,
+      5
+    ],
+    "details": {
+      "reason": "authentication"
+    }
+  },
+  {
+    "message": "Reconnecting... 2/5 403 forbidden",
+    "classification": "forbidden",
+    "attempt": [
+      2,
+      5
+    ],
+    "details": {
+      "reason": "authorization"
+    }
+  },
+  {
+    "message": "Reconnecting... 2/5 request timed out",
+    "classification": "timeout",
+    "attempt": [
+      2,
+      5
+    ],
+    "details": null
+  }
+]

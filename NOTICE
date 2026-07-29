@@ -1,0 +1,22 @@
+This project contains a Rust port of the Codex Security TypeScript SDK and CLI.
+
+The original work is:
+
+    codex-security
+    Copyright 2026 OpenAI
+    https://github.com/openai/codex-security
+    Licensed under the Apache License, Version 2.0
+
+The Rust port reimplements the behavior of the `@openai/codex-security`
+TypeScript package. Behavioral test cases in this repository are derived from
+the upstream `sdk/typescript/tests-ts` suite.
+
+In addition to reimplemented code, this repository redistributes the Codex
+Security plugin verbatim, unmodified, under `crates/codex-security/plugin/`.
+That directory is the upstream `_bundled_plugin` tree (version 0.1.14): its
+skills, schemas, scripts, references, and assets are OpenAI's work, not this
+port's, and are covered by the same Apache License, Version 2.0. It is embedded
+in the built binary and unpacked at runtime so a scan needs no separate
+install.
+
+This port is not affiliated with or endorsed by OpenAI.

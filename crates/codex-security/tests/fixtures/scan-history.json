@@ -1,0 +1,625 @@
+{
+ "list-wide": {
+  "args": [
+   {
+    "scans": [
+     {
+      "scanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/juice-shop",
+      "findingCount": 7,
+      "progress": {
+       "status": "complete"
+      }
+     },
+     {
+      "scanId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "deep",
+      "targetPath": "/demo/juice-shop",
+      "findingCount": 7,
+      "progress": {
+       "status": "running"
+      }
+     }
+    ]
+   },
+   "list",
+   {
+    "columns": 100,
+    "now": 1780251000000
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN HISTORY\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  2 scans  \u001b[36m·\u001b[0m  latest: 7 findings\n\n  \u001b[1mSCAN                                \u001b[0m \u001b[1mDATE      \u001b[0m \u001b[1mMODE    \u001b[0m \u001b[1mFINDINGS\u001b[0m \u001b[1mSTATUS\u001b[0m\n  aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa 2026-05-31 standard 7        \u001b[32m✓ COMPLETE\u001b[0m\n  bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb 2026-05-31 deep     7        \u001b[36m● RUNNING\u001b[0m\n\n"
+ },
+ "list-narrow": {
+  "args": [
+   {
+    "scans": [
+     {
+      "scanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/juice-shop",
+      "findingCount": 7,
+      "progress": {
+       "status": "complete"
+      }
+     }
+    ]
+   },
+   "list",
+   {
+    "columns": 60
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN HISTORY\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  1 scan  \u001b[36m·\u001b[0m  latest: 7 findings\n\n  aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\n    2026-05-31  \u001b[36m·\u001b[0m  7 findings  \u001b[36m·\u001b[0m  \u001b[32m✓ COMPLETE\u001b[0m\n\n"
+ },
+ "list-multi-repo": {
+  "args": [
+   {
+    "scans": [
+     {
+      "scanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/juice-shop",
+      "findingCount": 7,
+      "progress": {
+       "status": "complete"
+      }
+     },
+     {
+      "scanId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/other-app",
+      "findingCount": 7,
+      "progress": {
+       "status": "complete"
+      }
+     }
+    ]
+   },
+   "list",
+   {
+    "columns": 110
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN HISTORY\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  2 scans  \u001b[36m·\u001b[0m  latest: 7 findings\n\n  \u001b[1mSCAN                                \u001b[0m \u001b[1mDATE      \u001b[0m \u001b[1mMODE    \u001b[0m \u001b[1mREPOSITORY        \u001b[0m \u001b[1mFINDINGS\u001b[0m \u001b[1mSTATUS\u001b[0m\n  aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa 2026-05-31 standard juice-shop         7        \u001b[32m✓ COMPLETE\u001b[0m\n  cccccccc-cccc-4ccc-8ccc-cccccccccccc 2026-05-31 standard other-app          7        \u001b[32m✓ COMPLETE\u001b[0m\n\n"
+ },
+ "list-stale-running": {
+  "args": [
+   {
+    "scans": [
+     {
+      "scanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-01T00:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/juice-shop",
+      "findingCount": 7,
+      "progress": {
+       "status": "running"
+      }
+     },
+     {
+      "scanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/juice-shop",
+      "findingCount": 7,
+      "progress": {
+       "status": "complete"
+      }
+     }
+    ]
+   },
+   "list",
+   {
+    "columns": 96,
+    "now": 1780250400000
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN HISTORY\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  1 scan  \u001b[36m·\u001b[0m  latest: 7 findings\n\n  \u001b[1mSCAN                                \u001b[0m \u001b[1mDATE      \u001b[0m \u001b[1mMODE    \u001b[0m \u001b[1mFINDINGS\u001b[0m \u001b[1mSTATUS\u001b[0m\n  aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa 2026-05-31 standard 7        \u001b[32m✓ COMPLETE\u001b[0m\n\n"
+ },
+ "list-no-color": {
+  "args": [
+   {
+    "scans": [
+     {
+      "scanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/juice-shop",
+      "findingCount": 7,
+      "progress": {
+       "status": "complete"
+      }
+     }
+    ]
+   },
+   "list",
+   {
+    "columns": 96,
+    "color": false
+   }
+  ],
+  "text": "\n  ◆ CODEX SECURITY  /  SCAN HISTORY\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n  juice-shop  ·  1 scan  ·  latest: 7 findings\n\n  SCAN                                 DATE       MODE     FINDINGS STATUS\n  aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa 2026-05-31 standard 7        ✓ COMPLETE\n\n"
+ },
+ "list-single-scan": {
+  "args": [
+   {
+    "scans": [
+     {
+      "scanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/juice-shop",
+      "findingCount": 7,
+      "progress": {
+       "status": "complete"
+      }
+     }
+    ]
+   },
+   "list",
+   {
+    "columns": 96,
+    "repository": "/demo/juice-shop"
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN HISTORY\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  1 scan  \u001b[36m·\u001b[0m  latest: 7 findings\n\n  \u001b[1mSCAN                                \u001b[0m \u001b[1mDATE      \u001b[0m \u001b[1mMODE    \u001b[0m \u001b[1mFINDINGS\u001b[0m \u001b[1mSTATUS\u001b[0m\n  aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa 2026-05-31 standard 7        \u001b[32m✓ COMPLETE\u001b[0m\n\n"
+ },
+ "list-clamps-width": {
+  "args": [
+   {
+    "scans": [
+     {
+      "scanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/juice-shop",
+      "findingCount": 7,
+      "progress": {
+       "status": "complete"
+      }
+     }
+    ]
+   },
+   "list",
+   {
+    "columns": 500
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN HISTORY\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  1 scan  \u001b[36m·\u001b[0m  latest: 7 findings\n\n  \u001b[1mSCAN                                \u001b[0m \u001b[1mDATE      \u001b[0m \u001b[1mMODE    \u001b[0m \u001b[1mFINDINGS\u001b[0m \u001b[1mSTATUS\u001b[0m\n  aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa 2026-05-31 standard 7        \u001b[32m✓ COMPLETE\u001b[0m\n\n"
+ },
+ "list-clamps-narrow": {
+  "args": [
+   {
+    "scans": [
+     {
+      "scanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/juice-shop",
+      "findingCount": 7,
+      "progress": {
+       "status": "complete"
+      }
+     }
+    ]
+   },
+   "list",
+   {
+    "columns": 10
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN HISTORY\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  1 scan  \u001b[36m·\u001b[0m  latest: 7 findings\n\n  aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\n    2026-05-31  \u001b[36m·\u001b[0m  7 findings  \u001b[36m·\u001b[0m  \u001b[32m✓ COMPLETE\u001b[0m\n\n"
+ },
+ "show-full": {
+  "args": [
+   {
+    "scanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "targetPath": "/demo/juice-shop",
+    "mode": "standard",
+    "parentScanId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    "progress": {
+     "status": "complete",
+     "coverage": {
+      "closedRows": 12,
+      "worklistRows": 20,
+      "filesTotal": 340
+     }
+    },
+    "severityCounts": {
+     "critical": 1,
+     "high": 2,
+     "medium": 0,
+     "low": 3
+    },
+    "recipe": {
+     "config": {
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh"
+     },
+     "knowledgeBasePaths": [
+      "/docs/threats.md"
+     ]
+    },
+    "scanDir": "/scans/aaa",
+    "artifacts": {
+     "findingsJson": "/scans/aaa/findings.json",
+     "scanManifest": "/scans/aaa/scan-manifest.json"
+    },
+    "findingCount": 9,
+    "findings": [
+     {
+      "status": "persisting",
+      "severity": "high",
+      "title": "Basket ownership check is missing",
+      "locations": [
+       {
+        "path": "routes/basket.ts",
+        "startLine": 41
+       }
+      ]
+     },
+     {
+      "status": "persisting",
+      "severity": {
+       "level": "critical"
+      },
+      "title": "SQL injection",
+      "path": "routes/basket.ts"
+     }
+    ]
+   },
+   "show",
+   {
+    "columns": 96
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN DETAILS\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\n  \u001b[32m✓ COMPLETE\u001b[0m  \u001b[36m·\u001b[0m  standard\n  \u001b[1mPARENT SCAN\u001b[0m  dddddddd\n  \u001b[31m1 CRITICAL\u001b[0m  \u001b[36m·\u001b[0m  \u001b[31m2 HIGH\u001b[0m  \u001b[36m·\u001b[0m  \u001b[36m3 LOW\u001b[0m\n  \u001b[1mCONFIGURATION\u001b[0m  model=gpt-5.6-sol  \u001b[36m·\u001b[0m  effort=xhigh\n  \u001b[1mCOVERAGE\u001b[0m  12 of 20 reviewed  \u001b[36m·\u001b[0m  340 files\n  \u001b[1mKNOWLEDGE BASE\u001b[0m  \u001b[90m/docs/threats.md\u001b[0m\n  \u001b[1mARTIFACTS\u001b[0m\n    \u001b[90m/scans/aaa\u001b[0m\n    \u001b[1mFINDINGS JSON  \u001b[0m  \u001b[90mfindings.json\u001b[0m\n    \u001b[1mSCAN MANIFEST  \u001b[0m  \u001b[90mscan-manifest.json\u001b[0m\n\n  \u001b[1mFINDINGS\u001b[0m  \u001b[1m2 of 9\u001b[0m\n\n    \u001b[31mHIGH    \u001b[0m  Basket ownership check is missing\n              \u001b[90mroutes/basket.ts:41\u001b[0m\n\n    \u001b[31mCRITICAL\u001b[0m  SQL injection\n              \u001b[90mroutes/basket.ts\u001b[0m\n\n"
+ },
+ "show-failure": {
+  "args": [
+   {
+    "scanId": "aaaaaaaa",
+    "targetPath": "/demo/juice-shop",
+    "mode": "standard",
+    "progress": {
+     "status": "failed"
+    },
+    "failureMessage": "The scan ran out of budget before it could finish reviewing every worklist row in the repository.",
+    "findings": []
+   },
+   "show",
+   {
+    "columns": 70
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN DETAILS\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  aaaaaaaa\n  \u001b[31m● FAILED\u001b[0m  \u001b[36m·\u001b[0m  standard\n  \u001b[31mERROR\u001b[0m  The scan ran out of budget before it could finish\n           reviewing every worklist row in the repository.\n\n"
+ },
+ "show-linked": {
+  "args": [
+   {
+    "scanId": "aaaaaaaa",
+    "targetPath": "/demo/juice-shop",
+    "mode": "standard",
+    "progress": {
+     "status": "complete"
+    },
+    "findings": [
+     {
+      "status": "persisting",
+      "severity": "high",
+      "title": "Basket ownership check is missing",
+      "path": "routes/basket.ts",
+      "matches": [
+       {
+        "scanId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        "title": "Older basket finding",
+        "reason": "Same unchecked lookup."
+       }
+      ],
+      "knownSince": "2026-01-15T00:00:00Z",
+      "knownScanIds": [
+       "eeeeeeee-eeee",
+       "ffffffff-ffff"
+      ]
+     }
+    ]
+   },
+   "show",
+   {
+    "columns": 96,
+    "showLinkedFindings": true
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN DETAILS\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  aaaaaaaa\n  \u001b[32m✓ COMPLETE\u001b[0m  \u001b[36m·\u001b[0m  standard\n\n  \u001b[1mFINDINGS\u001b[0m  \u001b[1m1\u001b[0m\n\n    \u001b[31mHIGH    \u001b[0m  Basket ownership check is missing\n              \u001b[90mroutes/basket.ts\u001b[0m  \u001b[36m·\u001b[0m  \u001b[1mKnown since Jan 15, 2026\u001b[0m in eeeeeeee … ffffffff\n              \u001b[36m↔\u001b[0m \u001b[1mLINKED FINDINGS\u001b[0m\n                \u001b[1mMATCHED SCAN\u001b[0m \u001b[36meeeeeeee\u001b[0m\n                  ↳ Older basket finding\n                \u001b[1mSAME ROOT CAUSE\u001b[0m\n                  Same unchecked lookup.\n\n"
+ },
+ "show-linked-hidden": {
+  "args": [
+   {
+    "scanId": "aaaaaaaa",
+    "targetPath": "/demo/juice-shop",
+    "mode": "standard",
+    "progress": {
+     "status": "complete"
+    },
+    "findings": [
+     {
+      "status": "persisting",
+      "severity": "high",
+      "title": "Basket ownership check is missing",
+      "path": "routes/basket.ts",
+      "matches": [
+       {
+        "scanId": "eeeeeeee",
+        "title": "Older",
+        "reason": "Same."
+       }
+      ],
+      "knownSince": "2026-01-15T00:00:00Z"
+     }
+    ]
+   },
+   "show",
+   {
+    "columns": 96
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN DETAILS\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m  \u001b[36m·\u001b[0m  aaaaaaaa\n  \u001b[32m✓ COMPLETE\u001b[0m  \u001b[36m·\u001b[0m  standard\n\n  \u001b[1mFINDINGS\u001b[0m  \u001b[1m1\u001b[0m\n\n    \u001b[31mHIGH    \u001b[0m  Basket ownership check is missing\n              \u001b[90mroutes/basket.ts\u001b[0m  \u001b[36m·\u001b[0m  \u001b[1mKnown since Jan 15, 2026\u001b[0m\n\n"
+ },
+ "show-truncated": {
+  "args": [
+   {
+    "scanId": "a",
+    "targetPath": "/demo/x",
+    "mode": "standard",
+    "progress": {
+     "status": "complete"
+    },
+    "findingCount": 40,
+    "findingsTruncated": true,
+    "findings": [
+     {
+      "status": "persisting",
+      "severity": "high",
+      "title": "Basket ownership check is missing",
+      "path": "routes/basket.ts"
+     }
+    ]
+   },
+   "show",
+   {
+    "columns": 96
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN DETAILS\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mx\u001b[0m  \u001b[36m·\u001b[0m  a\n  \u001b[32m✓ COMPLETE\u001b[0m  \u001b[36m·\u001b[0m  standard\n\n  \u001b[1mFINDINGS\u001b[0m  \u001b[1m1 of 40\u001b[0m\n\n    \u001b[31mHIGH    \u001b[0m  Basket ownership check is missing\n              \u001b[90mroutes/basket.ts\u001b[0m\n\n"
+ },
+ "compare-full": {
+  "args": [
+   {
+    "repository": "/demo/juice-shop",
+    "beforeScanId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "afterScanId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "coverage": {
+     "afterCompleteness": "complete"
+    },
+    "summary": {
+     "new": 1,
+     "persisting": 2,
+     "resolved": 2,
+     "reopened": 1,
+     "unknown": 2
+    },
+    "findings": [
+     {
+      "status": "persisting",
+      "severity": "high",
+      "title": "Basket ownership check is missing",
+      "path": "routes/basket.ts",
+      "beforeOccurrenceIds": [
+       "b1",
+       "b2"
+      ],
+      "afterOccurrenceIds": [
+       "a1"
+      ],
+      "matchReason": "Both routes share the same unchecked basket lookup."
+     },
+     {
+      "status": "new",
+      "severity": "medium",
+      "title": "Order input is evaluated",
+      "path": "routes/b2bOrder.ts"
+     },
+     {
+      "status": "resolved",
+      "severity": "critical",
+      "title": "Login SQL injection",
+      "path": "routes/login.ts"
+     },
+     {
+      "status": "resolved",
+      "severity": "informational",
+      "title": "Cookie observation",
+      "path": "routes/session.ts"
+     },
+     {
+      "status": "reopened",
+      "severity": "low",
+      "title": "Reopened issue",
+      "path": "routes/r.ts"
+     },
+     {
+      "status": "unknown",
+      "severity": "high",
+      "title": "Excluded path",
+      "path": "routes/x.ts",
+      "reason": "The affected path was excluded or outside the later scope."
+     },
+     {
+      "status": "unknown",
+      "severity": "low",
+      "title": "Genuinely unknown",
+      "path": "routes/u.ts",
+      "reason": "Could not determine."
+     }
+    ]
+   },
+   "compare",
+   {
+    "columns": 96
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN COMPARISON\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m\n  aaaaaaaa → bbbbbbbb\n\n  \u001b[32m✓ 2 resolved\u001b[0m    \u001b[31m↻ 1 reopened\u001b[0m    \u001b[31m+ 1 new\u001b[0m    \u001b[33m● 2 persisting\u001b[0m    \u001b[36m○ 1 not rescanned\u001b[0m\n  \u001b[35m? 1 unknown\u001b[0m\n\n  \u001b[32m━━ ✓ Resolved (2 findings) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n\n    \u001b[31mCRITICAL\u001b[0m  Login SQL injection\n              \u001b[90mroutes/login.ts\u001b[0m\n\n    \u001b[37mINFORMATIONAL\u001b[0m  Cookie observation\n              \u001b[90mroutes/session.ts\u001b[0m\n\n  \u001b[31m━━ ↻ Reopened (1 finding) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n\n    \u001b[36mLOW     \u001b[0m  Reopened issue\n              \u001b[90mroutes/r.ts\u001b[0m\n\n  \u001b[31m━━ + New (1 finding) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n\n    \u001b[33mMEDIUM  \u001b[0m  Order input is evaluated\n              \u001b[90mroutes/b2bOrder.ts\u001b[0m\n\n  \u001b[33m━━ ● Persisting (1 finding) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n\n    \u001b[31mHIGH    \u001b[0m  Basket ownership check is missing\n              \u001b[90mroutes/basket.ts\u001b[0m  \u001b[36m·\u001b[0m  2 → 1\n              ↳ Both routes share the same unchecked basket lookup.\n\n  \u001b[36m━━ ○ Not rescanned (1 finding) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n    \u001b[36mOutside follow-up scan coverage\u001b[0m\n\n    \u001b[31mHIGH    \u001b[0m  Excluded path\n              \u001b[90mroutes/x.ts\u001b[0m\n\n  \u001b[35m━━ ? Unknown (1 finding) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n\n    \u001b[36mLOW     \u001b[0m  Genuinely unknown\n              \u001b[90mroutes/u.ts\u001b[0m\n              ↳ Could not determine.\n\n"
+ },
+ "compare-incomplete-coverage": {
+  "args": [
+   {
+    "beforeScanId": "aaaa",
+    "afterScanId": "bbbb",
+    "coverage": {
+     "afterCompleteness": "partial"
+    },
+    "summary": {
+     "new": 1
+    },
+    "findings": [
+     {
+      "status": "new",
+      "severity": "high",
+      "title": "Basket ownership check is missing",
+      "path": "routes/basket.ts"
+     }
+    ]
+   },
+   "compare",
+   {
+    "columns": 96
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN COMPARISON\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  aaaa → bbbb\n  \u001b[33m⚠ Follow-up coverage is partial; resolved findings cannot be confirmed.\u001b[0m\n\n  \u001b[31m+ 1 new\u001b[0m\n\n  \u001b[31m━━ + New (1 finding) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n\n    \u001b[31mHIGH    \u001b[0m  Basket ownership check is missing\n              \u001b[90mroutes/basket.ts\u001b[0m\n\n"
+ },
+ "compare-summary-wrap": {
+  "args": [
+   {
+    "beforeScanId": "aaaa",
+    "afterScanId": "bbbb",
+    "coverage": {
+     "afterCompleteness": "complete"
+    },
+    "summary": {
+     "new": 11,
+     "persisting": 22,
+     "resolved": 33,
+     "reopened": 44,
+     "unknown": 55,
+     "not_rescanned": 66
+    },
+    "findings": []
+   },
+   "compare",
+   {
+    "columns": 48
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN COMPARISON\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  aaaa → bbbb\n\n  \u001b[32m✓ 33 resolved\u001b[0m    \u001b[31m↻ 44 reopened\u001b[0m    \u001b[31m+ 11 new\u001b[0m\n  \u001b[33m● 22 persisting\u001b[0m    \u001b[36m○ 66 not rescanned\u001b[0m\n  \u001b[35m? 55 unknown\u001b[0m\n\n"
+ },
+ "compare-long-title-wrap": {
+  "args": [
+   {
+    "beforeScanId": "aaaa",
+    "afterScanId": "bbbb",
+    "coverage": {
+     "afterCompleteness": "complete"
+    },
+    "summary": {
+     "new": 1
+    },
+    "findings": [
+     {
+      "status": "new",
+      "severity": "high",
+      "title": "A very long finding title that will certainly need to wrap across several lines because it keeps going and going",
+      "path": "routes/basket.ts"
+     }
+    ]
+   },
+   "compare",
+   {
+    "columns": 60
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN COMPARISON\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  aaaa → bbbb\n\n  \u001b[31m+ 1 new\u001b[0m\n\n  \u001b[31m━━ + New (1 finding) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n\n    \u001b[31mHIGH    \u001b[0m  A very long finding title that will\n              certainly need to wrap across several lines\n              because it keeps going and going\n              \u001b[90mroutes/basket.ts\u001b[0m\n\n"
+ },
+ "match-all": {
+  "args": [
+   {
+    "repository": "/demo/juice-shop",
+    "scanCount": 5,
+    "matchedPairs": 4,
+    "findingMatches": 12,
+    "unavailableScans": 2
+   },
+   "match-all",
+   {
+    "columns": 96
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mMATCH RESULTS\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m\n\n  \u001b[36m●\u001b[0m 5 scans    \u001b[36m↔\u001b[0m 4 comparisons    \u001b[32m◆\u001b[0m 12 root-cause matches\n  \u001b[33m2 scans unavailable\u001b[0m\n\n"
+ },
+ "match-all-clean": {
+  "args": [
+   {
+    "repository": "/demo/juice-shop",
+    "scanCount": 1,
+    "matchedPairs": 0,
+    "findingMatches": 0
+   },
+   "match-all",
+   {
+    "columns": 96
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mMATCH RESULTS\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1mjuice-shop\u001b[0m\n\n  \u001b[36m●\u001b[0m 1 scans    \u001b[36m↔\u001b[0m 0 comparisons    \u001b[32m◆\u001b[0m 0 root-cause matches\n\n"
+ },
+ "control-chars": {
+  "args": [
+   {
+    "scans": [
+     {
+      "scanId": "id\u001b[31mred",
+      "startedAt": "2026-05-31T18:00:00Z",
+      "updatedAt": "2026-05-31T18:00:00Z",
+      "mode": "standard",
+      "targetPath": "/demo/a\u0007b",
+      "findingCount": 7,
+      "progress": {
+       "status": "complete"
+      }
+     }
+    ]
+   },
+   "list",
+   {
+    "columns": 96
+   }
+  ],
+  "text": "\n  \u001b[36m◆\u001b[0m \u001b[1mCODEX SECURITY\u001b[0m  \u001b[36m/\u001b[0m  \u001b[1mSCAN HISTORY\u001b[0m\n  \u001b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m\n  \u001b[1ma b\u001b[0m  \u001b[36m·\u001b[0m  1 scan  \u001b[36m·\u001b[0m  latest: 7 findings\n\n  \u001b[1mSCAN                                \u001b[0m \u001b[1mDATE      \u001b[0m \u001b[1mMODE    \u001b[0m \u001b[1mFINDINGS\u001b[0m \u001b[1mSTATUS\u001b[0m\n  idred                                2026-05-31 standard 7        \u001b[32m✓ COMPLETE\u001b[0m\n\n"
+ }
+}

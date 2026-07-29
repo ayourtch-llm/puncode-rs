@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/codex-security", "crates/codex-security-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/ayourtch/puncode-rs"
+
+[workspace.dependencies]
+ureq = { version = "3", features = ["json"] }
+dialoguer = { version = "0.12", default-features = false, features = ["fuzzy-select"] }
+signal-hook = "0.3"
+include_dir = "0.7"
+clap = { version = "4", features = ["derive", "wrap_help", "env"] }
+pdf-extract = "0.12"
+codex-security = { path = "crates/codex-security", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+crc32fast = "1"
+serde_json = { version = "1", features = ["unbounded_depth", "preserve_order"] }
+jsonschema = { version = "0.34", default-features = false }
+regex = "1"
+thiserror = "2"
+tempfile = "3"
+toml = "0.9"
+url = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+rustix = { version = "1", features = ["fs", "process"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }

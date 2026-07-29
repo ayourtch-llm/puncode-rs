@@ -1,0 +1,256 @@
+{
+ "simple": {
+  "source": "id,repository,revision\na,b,c\n",
+  "data": [
+   [
+    "id",
+    "repository",
+    "revision"
+   ],
+   [
+    "a",
+    "b",
+    "c"
+   ]
+  ],
+  "errors": []
+ },
+ "crlf": {
+  "source": "id,repository,revision\r\na,b,c\r\n",
+  "data": [
+   [
+    "id",
+    "repository",
+    "revision"
+   ],
+   [
+    "a",
+    "b",
+    "c"
+   ]
+  ],
+  "errors": []
+ },
+ "bom": {
+  "source": "﻿\"id\",\"repository\",\"revision\"\r\n\"payments\",\"/p\",\"abc\"\r\n\r\n",
+  "data": [
+   [
+    "id",
+    "repository",
+    "revision"
+   ],
+   [
+    "payments",
+    "/p",
+    "abc"
+   ]
+  ],
+  "errors": []
+ },
+ "quoted-comma": {
+  "source": "id,repository\n\"a\",\"comma, inside\"\n",
+  "data": [
+   [
+    "id",
+    "repository"
+   ],
+   [
+    "a",
+    "comma, inside"
+   ]
+  ],
+  "errors": []
+ },
+ "escaped-quote": {
+  "source": "id,notes\n\"a\",\"contains \"\"quotes\"\"\"\n",
+  "data": [
+   [
+    "id",
+    "notes"
+   ],
+   [
+    "a",
+    "contains \"quotes\""
+   ]
+  ],
+  "errors": []
+ },
+ "trailing-blank-lines": {
+  "source": "id,repository\na,b\n\n\n",
+  "data": [
+   [
+    "id",
+    "repository"
+   ],
+   [
+    "a",
+    "b"
+   ]
+  ],
+  "errors": []
+ },
+ "interior-blank-line": {
+  "source": "id,repository\na,b\n\nc,d\n",
+  "data": [
+   [
+    "id",
+    "repository"
+   ],
+   [
+    "a",
+    "b"
+   ],
+   [
+    "c",
+    "d"
+   ]
+  ],
+  "errors": []
+ },
+ "whitespace-only-line": {
+  "source": "id,repository\na,b\n   \nc,d\n",
+  "data": [
+   [
+    "id",
+    "repository"
+   ],
+   [
+    "a",
+    "b"
+   ],
+   [
+    "c",
+    "d"
+   ]
+  ],
+  "errors": []
+ },
+ "unclosed-quote": {
+  "source": "id,repository,revision\npayments,\"/p,abc\n",
+  "data": [
+   [
+    "id",
+    "repository",
+    "revision"
+   ],
+   [
+    "payments",
+    "/p,abc\n"
+   ]
+  ],
+  "errors": [
+   {
+    "type": "Quotes",
+    "code": "MissingQuotes",
+    "message": "Quoted field unterminated",
+    "row": 1
+   }
+  ]
+ },
+ "ragged-short": {
+  "source": "id,repository,revision\npayments,/p\n",
+  "data": [
+   [
+    "id",
+    "repository",
+    "revision"
+   ],
+   [
+    "payments",
+    "/p"
+   ]
+  ],
+  "errors": []
+ },
+ "ragged-long": {
+  "source": "id,repository,revision\npayments,/p,abc,extra\n",
+  "data": [
+   [
+    "id",
+    "repository",
+    "revision"
+   ],
+   [
+    "payments",
+    "/p",
+    "abc",
+    "extra"
+   ]
+  ],
+  "errors": []
+ },
+ "no-trailing-newline": {
+  "source": "id,repository\na,b",
+  "data": [
+   [
+    "id",
+    "repository"
+   ],
+   [
+    "a",
+    "b"
+   ]
+  ],
+  "errors": []
+ },
+ "empty": {
+  "source": "",
+  "data": [],
+  "errors": []
+ },
+ "header-only": {
+  "source": "id,repository,revision\n",
+  "data": [
+   [
+    "id",
+    "repository",
+    "revision"
+   ]
+  ],
+  "errors": []
+ },
+ "spaces-around": {
+  "source": "id, repository ,revision\n a , b , c \n",
+  "data": [
+   [
+    "id",
+    " repository ",
+    "revision"
+   ],
+   [
+    " a ",
+    " b ",
+    " c "
+   ]
+  ],
+  "errors": []
+ },
+ "cr-only": {
+  "source": "id,repository\ra,b\r",
+  "data": [
+   [
+    "id",
+    "repository"
+   ],
+   [
+    "a",
+    "b"
+   ]
+  ],
+  "errors": []
+ },
+ "quoted-newline": {
+  "source": "id,notes\n\"a\",\"line1\nline2\"\n",
+  "data": [
+   [
+    "id",
+    "notes"
+   ],
+   [
+    "a",
+    "line1\nline2"
+   ]
+  ],
+  "errors": []
+ }
+}
