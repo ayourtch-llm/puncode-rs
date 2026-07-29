@@ -62,7 +62,19 @@ for entry in "${FIXTURES[@]}"; do
     dir="$OUT/$name"
     rm -rf "$dir"
 
-    args=(scan "$ROOT/fixtures/$name" --output-dir "$dir" --json)
+    # Scanned from a copy, not from the checkout. The fixtures live inside this
+    # repository, so a commit during the run moves HEAD and the scan is refused
+    # at the end with "Repository HEAD changed while the scan was running" —
+    # after doing all the work. Losing an hour of scanning to an unrelated
+    # commit is not a reasonable thing to ask of whoever runs this.
+    snapshot="$OUT/$name.src"
+    rm -rf "$snapshot"
+    mkdir -p "$snapshot"
+    cp -r "$ROOT/fixtures/$name/." "$snapshot/"
+    ( cd "$snapshot" && git init -q && git add -A \
+        && git -c user.email=fixtures@local -c user.name=fixtures commit -qm snapshot )
+
+    args=(scan "$snapshot" --output-dir "$dir" --json)
     if [[ -n "$BASE_URL" ]]; then
         # A local endpoint needs the request reshaped for templates that accept
         # only one system message, and some key must be present even if unused.
