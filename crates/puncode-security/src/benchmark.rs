@@ -37,6 +37,13 @@ pub const LINE_TOLERANCE: u32 = 12;
 /// did not: it credited the flaw to a different finding entirely.
 pub const CLASS_TOLERANCE: u32 = 60;
 
+/// One more place a flaw is expressed.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AlsoAt {
+    pub file: String,
+    pub lines: (u32, u32),
+}
+
 /// A flaw deliberately placed in a fixture.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlantedFlaw {
@@ -50,6 +57,15 @@ pub struct PlantedFlaw {
     pub severity: Option<String>,
     #[serde(default)]
     pub summary: Option<String>,
+    /// Other places the same flaw is expressed.
+    ///
+    /// A flaw that crosses files has no single home: user input read in one
+    /// file reaches a query built in another, and a scan may reasonably point
+    /// at either end. Citing any recorded place is finding it. Without this a
+    /// finding that named only the route would count as a miss, which would
+    /// measure where a model prefers to point rather than what it found.
+    #[serde(default)]
+    pub also: Vec<AlsoAt>,
     /// Whether this was found by a scan rather than deliberately planted.
     ///
     /// Recorded rather than smoothed over. A corpus that quietly absorbs
@@ -366,7 +382,7 @@ pub fn score_fixture_with_deferrals(
     // off-by-one to the use-after-free's, and still scored three of three.
     let mut assigned: Vec<Option<(usize, MatchedBy)>> = vec![None; fixture.flaws.len()];
     for (position, flaw) in fixture.flaws.iter().enumerate() {
-        if let Some(index) = nearest_same_class(findings, &claimed, flaw) {
+        if let Some(index) = nearest_same_class(findings, &claimed, flaw, fixture) {
             claimed[index] = true;
             assigned[position] = Some((index, MatchedBy::Class));
         }
@@ -535,12 +551,25 @@ fn nearest_same_class(
     findings: &[ReportedFinding],
     claimed: &[bool],
     flaw: &PlantedFlaw,
+    fixture: &Fixture,
 ) -> Option<usize> {
     let planted = flaw.cwe.as_deref()?;
     findings
         .iter()
         .enumerate()
         .filter(|(index, _)| !claimed[*index])
+        // A finding sitting on something the corpus records as safe is noise,
+        // whatever its class. Without this the wider class tolerance reaches
+        // straight over a decoy: one written to resemble the flaw beside it
+        // will share its class by construction, and crediting it would turn
+        // the decoy into a second way to score.
+        .filter(|(_, finding)| {
+            !fixture
+                .decoys
+                .iter()
+                .any(|decoy| cites_decoy(finding, decoy))
+                || cites(finding, flaw)
+        })
         .filter(|(_, finding)| {
             finding
                 .cwe
@@ -551,8 +580,17 @@ fn nearest_same_class(
             finding
                 .locations
                 .iter()
-                .filter(|location| same_file(&location.file, &flaw.file))
-                .map(|location| distance(location.line, flaw.lines))
+                .filter_map(|location| {
+                    std::iter::once((flaw.file.as_str(), flaw.lines))
+                        .chain(
+                            flaw.also
+                                .iter()
+                                .map(|also| (also.file.as_str(), also.lines)),
+                        )
+                        .filter(|(file, _)| same_file(&location.file, file))
+                        .map(|(_, lines)| distance(location.line, lines))
+                        .min()
+                })
                 .min()
                 .filter(|distance| *distance <= CLASS_TOLERANCE)
                 .map(|distance| (distance, index))
@@ -570,7 +608,15 @@ fn distance(line: u32, planted: (u32, u32)) -> u32 {
 /// Whether a finding points at where a flaw was planted.
 fn cites(finding: &ReportedFinding, flaw: &PlantedFlaw) -> bool {
     finding.locations.iter().any(|location| {
-        same_file(&location.file, &flaw.file) && within_tolerance(location.line, flaw.lines)
+        std::iter::once((flaw.file.as_str(), flaw.lines))
+            .chain(
+                flaw.also
+                    .iter()
+                    .map(|also| (also.file.as_str(), also.lines)),
+            )
+            .any(|(file, lines)| {
+                same_file(&location.file, file) && within_tolerance(location.line, lines)
+            })
     })
 }
 
@@ -1117,6 +1163,7 @@ mod tests {
     fn flaw(id: &str, file: &str, first: u32, last: u32, cwe: &str) -> PlantedFlaw {
         PlantedFlaw {
             id: id.to_owned(),
+            also: Vec::new(),
             found_not_planted: false,
             why: None,
             file: file.to_owned(),
@@ -1664,6 +1711,7 @@ mod severity_tests {
     fn flaw_with(severity: &str) -> PlantedFlaw {
         PlantedFlaw {
             id: "a".to_owned(),
+            also: Vec::new(),
             found_not_planted: false,
             why: None,
             file: "src/app.py".to_owned(),
@@ -1876,6 +1924,7 @@ mod deferral_tests {
     fn flaw(id: &str, file: &str, first: u32, last: u32) -> PlantedFlaw {
         PlantedFlaw {
             id: id.to_owned(),
+            also: Vec::new(),
             found_not_planted: false,
             why: None,
             file: file.to_owned(),
@@ -2430,6 +2479,7 @@ mod real_matching_tests {
             language: None,
             flaws: vec![PlantedFlaw {
                 id: "planted".to_owned(),
+                also: Vec::new(),
                 found_not_planted: false,
                 why: None,
                 file: "a.c".to_owned(),
@@ -2575,5 +2625,134 @@ mod confirmed_rate_tests {
 
         assert_eq!(shortfalls.len(), 1, "{shortfalls:?}");
         assert!(shortfalls[0].describe().contains("50%"), "{shortfalls:?}");
+    }
+}
+
+#[cfg(test)]
+mod cross_file_tests {
+    use super::*;
+
+    fn corpus() -> GroundTruth {
+        GroundTruth::parse(
+            &std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../benchmark/ground-truth.json"),
+            )
+            .expect("the shipped corpus"),
+        )
+        .expect("parses")
+    }
+
+    fn finding(title: &str, file: &str, line: u32, cwe: &str) -> ReportedFinding {
+        ReportedFinding {
+            title: title.to_owned(),
+            severity: None,
+            cwe: Some(cwe.to_owned()),
+            locations: vec![ReportedLocation {
+                file: file.to_owned(),
+                line,
+            }],
+        }
+    }
+
+    /// A taint that crosses files can honestly be reported at either end, and
+    /// scoring only one would measure where a model prefers to point.
+    #[test]
+    fn a_cross_file_flaw_is_found_from_either_end() {
+        let fixture = corpus()
+            .fixture("report-service")
+            .expect("the fixture")
+            .clone();
+
+        for (file, line) in [("src/store.py", 22), ("src/app.py", 25)] {
+            let score = score_fixture(&fixture, &[finding("SQL injection", file, line, "CWE-89")]);
+
+            let outcome = score
+                .outcomes
+                .iter()
+                .find(|outcome| outcome.flaw_id == "crossfile-sqli")
+                .expect("the flaw");
+            assert!(outcome.found(), "not found from {file}:{line}");
+        }
+    }
+
+    /// And the route end only counts because it is recorded — without the
+    /// second location it is a different file entirely.
+    #[test]
+    fn the_route_end_does_not_match_without_being_recorded() {
+        let mut fixture = corpus()
+            .fixture("report-service")
+            .expect("the fixture")
+            .clone();
+        for flaw in &mut fixture.flaws {
+            flaw.also.clear();
+        }
+
+        let score = score_fixture(
+            &fixture,
+            &[finding("SQL injection", "src/app.py", 25, "CWE-89")],
+        );
+
+        assert!(
+            !score
+                .outcomes
+                .iter()
+                .find(|outcome| outcome.flaw_id == "crossfile-sqli")
+                .expect("the flaw")
+                .found()
+        );
+    }
+
+    /// The decoy is the same shape as the flaw and ends in a bound parameter.
+    /// A finding there is noise and must not be credited as a detection — which
+    /// it silently was when the two sat five lines apart, close enough for the
+    /// line tolerance to confuse them.
+    #[test]
+    fn a_finding_on_the_bound_query_is_noise_and_not_a_detection() {
+        let fixture = corpus()
+            .fixture("report-service")
+            .expect("the fixture")
+            .clone();
+
+        let score = score_fixture(
+            &fixture,
+            &[finding("SQL injection", "src/store.py", 46, "CWE-89")],
+        );
+
+        assert_eq!(score.found(), 0, "{score:?}");
+        assert_eq!(score.decoys_tripped, vec!["tag-flow-bound"]);
+        assert_eq!(score.unmatched.len(), 1);
+    }
+
+    /// The absence of a call is a flaw with nowhere obvious to point, so the
+    /// recorded range covers the whole route rather than a line.
+    #[test]
+    fn the_missing_check_is_found_anywhere_in_its_route() {
+        let fixture = corpus()
+            .fixture("report-service")
+            .expect("the fixture")
+            .clone();
+
+        for line in [50, 51, 52, 53] {
+            let score = score_fixture(
+                &fixture,
+                &[finding(
+                    "Missing authorization",
+                    "src/app.py",
+                    line,
+                    "CWE-862",
+                )],
+            );
+
+            assert!(
+                score
+                    .outcomes
+                    .iter()
+                    .find(|outcome| outcome.flaw_id == "missing-authz")
+                    .expect("the flaw")
+                    .found(),
+                "not found at line {line}"
+            );
+        }
     }
 }
