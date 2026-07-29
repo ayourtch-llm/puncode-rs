@@ -66,6 +66,13 @@ pub fn is_python_path_candidate(candidate: &str) -> bool {
 }
 
 /// The environment the plugin's scripts run under.
+///
+/// Bytecode writing is switched off. The plugin lives in a tree whose contents
+/// are digested and checked before each reuse, and `__pycache__` written during
+/// a run would make that check fail on ordinary use — an integrity alarm that
+/// fires every time teaches its reader to ignore it, which is worse than not
+/// having one. Excluding the cache from the digest instead would leave a place
+/// to hide a `.pyc` that Python loads in preference to its source.
 #[must_use]
 pub fn plugin_execution_environment(
     python: &Path,
@@ -73,6 +80,7 @@ pub fn plugin_execution_environment(
 ) -> ProcessEnvironment {
     let mut environment = environment.clone();
     environment.insert("PYTHON".to_owned(), python.to_string_lossy().into_owned());
+    environment.insert("PYTHONDONTWRITEBYTECODE".to_owned(), "1".to_owned());
     environment
 }
 

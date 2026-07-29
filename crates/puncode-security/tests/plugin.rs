@@ -127,3 +127,24 @@ fn no_destination_asked_for_means_no_answer() {
         None
     );
 }
+
+// The plugin tree is digested and checked before each reuse. Bytecode written
+// during a run would make that check fail on ordinary use, and an integrity
+// alarm that fires every time teaches its reader to ignore it.
+//
+// The workbench runner already passes -B, but the agent runs plugin helpers
+// itself through $PYTHON, so the environment has to carry the same rule.
+#[test]
+fn the_plugin_environment_forbids_writing_bytecode() {
+    use puncode_security::runtime::plugin_execution_environment;
+
+    let prepared = plugin_execution_environment(
+        std::path::Path::new("/usr/bin/python3"),
+        &std::collections::BTreeMap::new(),
+    );
+
+    assert_eq!(
+        prepared.get("PYTHONDONTWRITEBYTECODE").map(String::as_str),
+        Some("1")
+    );
+}

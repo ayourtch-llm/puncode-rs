@@ -287,29 +287,34 @@ pub fn bundled_plugin_root() -> Result<PathBuf> {
     // Unpacked once per version, beside the rest of Codex Security's state, so
     // repeated commands do not each pay to write 94 files. The version is in
     // the path, so upgrading never reads a stale tree.
-    let root = plugin_cache_root()?.join(format!("plugin-{BUNDLED_PLUGIN_VERSION}"));
-    let ready = root.join(".unpacked");
     let expected = embedded_digest(&PLUGIN);
 
-    // The unpacked copy is on disk between commands, where anything with write
-    // access could change it — and its scripts are executed by every scan. The
-    // marker records what was written, so an altered tree is noticed rather
-    // than trusted for the life of the version.
+    // The directory is named for what it holds, so a tree that no longer
+    // matches is simply not the one this build looks for — a fresh one is
+    // written beside it. Nothing in use is ever deleted, which matters because
+    // several commands, and a running scan, share this directory.
+    let root = plugin_cache_root()?.join(format!(
+        "plugin-{BUNDLED_PLUGIN_VERSION}-{}",
+        &expected[..16]
+    ));
+    let ready = root.join(".unpacked");
+
+    // The unpacked copy sits on disk between commands, where anything with
+    // write access could change it, and its scripts are executed by every scan.
     if ready.is_file() {
         match std::fs::read_to_string(&ready) {
             Ok(recorded) if recorded.trim() == expected && unpacked_digest(&root) == expected => {
                 return validate_plugin_root(&root);
             }
             _ => {
-                // Said out loud, not silently repaired: a tree that changed
-                // under us is worth knowing about even when replacing it fixes
-                // the immediate problem.
+                // Said out loud rather than quietly repaired: a tree that
+                // changed under us is worth knowing about even once a fresh
+                // copy fixes the immediate problem.
                 eprintln!(
-                    "puncode-security: the unpacked plugin at {} does not match what this build \
-                     ships; replacing it.",
+                    "puncode-security: the unpacked plugin at {} is not what this build ships; \
+                     unpacking a fresh copy.",
                     root.display()
                 );
-                let _ = std::fs::remove_dir_all(&root);
             }
         }
     }
@@ -329,6 +334,15 @@ pub fn bundled_plugin_root() -> Result<PathBuf> {
         Error::plugin_bootstrap("Unable to unpack the bundled Codex Security plugin")
             .with_source(error)
     })?;
+
+    // Replaced rather than merged into, so a tree that failed verification is
+    // not left half-old. Removed only after the new one is ready, and only a
+    // directory this build is about to supersede.
+    if root.exists() {
+        let discarded = root.with_extension(format!("superseded-{}", std::process::id()));
+        let _ = std::fs::rename(&root, &discarded);
+        let _ = std::fs::remove_dir_all(&discarded);
+    }
 
     match std::fs::rename(&staging, &root) {
         Ok(()) => {}

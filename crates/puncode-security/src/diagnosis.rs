@@ -107,8 +107,16 @@ pub fn recognise_from(text: &str, origin: Origin) -> Option<Cause> {
     let lowered = text.to_ascii_lowercase();
 
     // A sandbox that will not start is reported by the command that could not
-    // run, so this is the one cause worth reading command output for.
-    if lowered.contains("bwrap")
+    // run, so this is the one cause worth reading command output for — and that
+    // makes it the one that can match the repository's own text. Scanning a
+    // codebase that merely mentions bwrap, such as this one, must not look like
+    // a sandbox failure, so the failure's shape is required and not just the
+    // word: bwrap reports as "bwrap: <what failed>".
+    let bwrap_failure = lowered.contains("bwrap:")
+        && (lowered.contains("permission denied")
+            || lowered.contains("failed to")
+            || lowered.contains("operation not permitted"));
+    if bwrap_failure
         || (lowered.contains("failed to make") && lowered.contains("slave"))
         || lowered.contains("sandbox could not be initialized")
     {
@@ -415,6 +423,22 @@ mod tests {
 
     /// A sandbox failure is reported by the command that could not run, so it
     /// must still be recognised there.
+    /// Scanning a codebase that discusses sandboxing must not look like a
+    /// sandbox failure. This tool's own source mentions bwrap throughout, and a
+    /// scan of it reported the sandbox as broken while running with the sandbox
+    /// deliberately off.
+    #[test]
+    fn does_not_read_source_that_mentions_bwrap_as_a_sandbox_failure() {
+        for text in [
+            "let bwrap = find_bundled_bwrap();",
+            "// Codex ships its own bubblewrap; running bwrap is the only check",
+            "the bwrap binary lives under codex-resources",
+            "puncode-security scan . --dangerously-disable-sandbox   # alias: --yolo",
+        ] {
+            assert_eq!(recognise(text), None, "{text}");
+        }
+    }
+
     #[test]
     fn still_reads_a_sandbox_failure_from_command_output() {
         let mut watch = FailureWatch::new();
