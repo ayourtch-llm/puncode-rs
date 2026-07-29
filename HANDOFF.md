@@ -91,10 +91,22 @@ nobody trusts.
 3. **Upstream feedback is written and unsent.**
    [docs/upstream-report.md](docs/upstream-report.md) has every claim re-checked
    against the shipped package. This checkout has no way to open an issue.
-4. **Run-to-run variance is unquantified.** It keeps turning out to be the
-   largest single effect — see the mutation results — and there is no measurement
-   of it beyond anecdotes. `scan --repeat` and `consensus` exist; nobody has
-   pointed them at one target enough times to put a number on it.
+4. **Run-to-run variance now has a number, and it is large.** Six scans of one
+   unchanged target (the `list-to-shell` mutant, identical flags, same model):
+
+   | | Result |
+   |---|---|
+   | reported | 5 of 6 |
+   | deferred instead | 1 of 6 |
+   | severity, among those reported | high ×3, medium ×2 |
+
+   The same one-line command injection is called **high or medium depending on
+   the run**, and once is not reported at all. For anyone triaging by severity
+   that is the difference between today and the backlog.
+
+   Still open: this is one target and one flaw class. Whether 5-in-6 is typical,
+   or whether harder flaws are worse, needs the same treatment on several
+   targets — which is hours of scanning rather than one.
 
 ### Closed since these notes began
 
@@ -836,12 +848,16 @@ reaches `compress_export` — and the correction to my own `confirmed_by` string
 stands, because that correction was about what my attacks proved, not about what
 the scanner did.
 
-**This is the finding that keeps recurring here.** CWE-208 detected once in
-seven runs; `kv-store` scoring 2, 3 and 4 of 4 on identical code; and now the
-same mutant deferred and reported. Run-to-run variance is larger than most of
-the capability distinctions this project has drawn, and any single-run result —
-including all three mutant results above — should be read with that in front of
-it.
+**This is the finding that keeps recurring here**, and it is now measured. Six
+scans of this one mutant, unchanged code and identical flags: reported five
+times, deferred once, and among the five the severity came out **high three
+times and medium twice**. Add CWE-208 detected once in seven runs and `kv-store`
+scoring 2, 3 and 4 of 4 on identical code.
+
+Run-to-run variance is larger than most of the capability distinctions this
+project has drawn. Any single-run result — including all three mutant results
+above — should be read with that in front of it, which is why `bench` now says
+so under every rate it prints.
 
 ### The prediction that was wrong, and the better statement
 
