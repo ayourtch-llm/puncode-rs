@@ -595,6 +595,42 @@ findings by running the code, and the workbench refuses a scan whose tree
 changed. Those two requirements are in direct conflict on any repository with a
 build step, and the cost lands at the very end.
 
+## What the sealed-manifest fix actually did: one of two
+
+Evaluated on the two fixtures that failed that way, 2026-07-29 17:46.
+
+- `orders-api-b` **saved cleanly**. Sorted keys, `sealedAt`
+  `17:55:09.487730Z` — a real timestamp from the plugin's own writer.
+- `link-service` **failed again**, with `sealedAt: 2026-07-29T18:00:00Z`. Another
+  round minute, invented, in insertion order, mode 664.
+
+So the instruction is not sufficient. One run each is thin evidence, but it is
+enough to say the prompt line does not reliably stop this and the failure should
+be expected to recur. Do not record it as fixed.
+
+**Two things did work, in the wild rather than in a test.**
+
+The manifest diagnosis fired on the real failure, unprompted:
+
+```
+puncode-security: the manifest it kept is not the plugin writer's output:
+puncode-security:   keys are not in sorted order at the top level
+puncode-security:   the file is mode 664, and the writer creates 600
+```
+
+And the anchor check made its first real catch, on the scan that **succeeded**:
+every one of the eight locations in `orders-api-b` points past the end of the
+file it names. `src/app.py` has 21 lines; the findings cite 22 and 23.
+
+`bench` scored that scan **2 of 2**. Read carefully before acting on it: the
+flaws sit at lines 16 and 21, so the citations are one or two lines out, and on
+a longer file they would resolve without comment. This is imprecise citation,
+not a hallucinated finding, and `LINE_TOLERANCE` exists precisely so detection
+is not scored on citation precision. **Do not make an unresolvable anchor fail
+the benchmark** — it would measure the wrong thing. It is worth saying to
+whoever opens `src/app.py:23` and finds nothing there, which is what the scan
+summary now does.
+
 ## Half a corpus run can be lost to a hand-written manifest
 
 The mechanism, established from the artefacts rather than guessed:
