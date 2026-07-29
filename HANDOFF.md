@@ -30,6 +30,7 @@ what was learned, what nearly went wrong, and what is still open. Read
 
 **What the tool checks, and why each exists**
 
+- ["Verified" covers the manifest, not the directory](#verified-covers-the-manifest-not-the-directory)
 - [The seal cannot check itself](#the-seal-cannot-check-itself)
 - [Findings are checked against the code now](#findings-are-checked-against-the-code-now)
 - [The target can talk back](#the-target-can-talk-back)
@@ -516,6 +517,24 @@ whoever opens `src/app.py:23` and finds nothing there, which is what the scan
 summary now does.
 
 # What the tool checks, and why each exists
+
+## "Verified" covers the manifest, not the directory
+
+`verify` checks the documents the manifest lists and was silent about everything
+else in the folder — while printing "these results are internally consistent",
+which invites a reader to think it covered the lot.
+
+Counted here: **5 of 39 scan directories hold something the contract does not
+list.** Agent working notes (`discovery`, `threat_model.md`), a leftover
+`.tmp`, and in one case five Python scripts the agent wrote while finishing the
+scan — `build_artifacts.py`, `fix_identity.py`, `fix_remediation.py`,
+`fix_sections.py`, `fix_code_evidence.py`. Anybody archiving or forwarding that
+directory sends them too.
+
+It is reported as a note and **never fails the verdict**: the sealed documents
+really are verified, and failing would say the results are wrong when they are
+not. Top-level entries only; naming every file under a directory of working
+notes would bury the line that matters.
 
 ## The seal cannot check itself
 

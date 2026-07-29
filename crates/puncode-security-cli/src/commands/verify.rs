@@ -41,6 +41,15 @@ pub struct Verification {
     /// `None` when there is no manifest file at all, which the contract failure
     /// will already have said.
     pub manifest_form: Option<ManifestForm>,
+    /// Entries in the directory the contract says nothing about.
+    ///
+    /// Never a failure. The seal covers what the manifest lists, and this says
+    /// what else is there — which "these results are internally consistent"
+    /// otherwise invites a reader to assume it covered. Five of thirty-nine
+    /// scan directories here hold something unlisted: an agent's working notes,
+    /// a leftover temporary file, and in one case five Python scripts the agent
+    /// wrote while finishing the scan.
+    pub unlisted: Vec<String>,
 }
 
 impl Verification {
@@ -79,6 +88,8 @@ pub fn run(scan_dir: &Path) -> Result<Verification, String> {
         .is_file()
         .then(|| inspect_manifest_file(&manifest_path));
 
+    let unlisted = unlisted_entries(scan_dir);
+
     let provenance = Provenance::read(scan_dir).ok();
     let same_plugin = provenance
         .as_ref()
@@ -94,7 +105,56 @@ pub fn run(scan_dir: &Path) -> Result<Verification, String> {
         provenance,
         same_plugin,
         manifest_form,
+        unlisted,
     })
+}
+
+/// Top-level entries the contract does not account for.
+///
+/// The contract documents, whatever the manifest lists, and the two files this
+/// tool writes itself are all expected; anything else is reported. Top level
+/// only — naming every file under a directory of working notes would bury the
+/// one line that matters.
+fn unlisted_entries(scan_dir: &Path) -> Vec<String> {
+    let mut expected: std::collections::BTreeSet<String> = [
+        "scan-manifest.json",
+        "findings.json",
+        "coverage.json",
+        "report.md",
+        // Written by this tool beside the results, not by the scan.
+        "provenance.json",
+        "exports",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+
+    if let Ok(body) = std::fs::read_to_string(scan_dir.join("scan-manifest.json"))
+        && let Ok(document) = serde_json::from_str::<serde_json::Value>(&body)
+    {
+        for artifact in document["scan"]["artifacts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            if let Some(path) = artifact["path"].as_str()
+                && let Some(head) = path.split('/').next()
+            {
+                expected.insert(head.to_owned());
+            }
+        }
+    }
+
+    let Ok(entries) = std::fs::read_dir(scan_dir) else {
+        return Vec::new();
+    };
+    let mut unlisted: Vec<String> = entries
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| !expected.contains(name))
+        .collect();
+    unlisted.sort();
+    unlisted
 }
 
 /// The digest of the plugin this build has unpacked.
@@ -187,6 +247,20 @@ pub fn render(verification: &Verification, scan_dir: &Path) -> String {
         ),
     }
 
+    if !verification.unlisted.is_empty() {
+        // A fact about the directory, not a judgement on the results. Somebody
+        // archiving or forwarding a scan is sending these too.
+        lines.push(format!(
+            "  also     {} item(s) here that the contract does not list: {}",
+            verification.unlisted.len(),
+            verification.unlisted.join(", ")
+        ));
+        lines.push(
+            "           Verified covers what the manifest names. These are not part of it."
+                .to_owned(),
+        );
+    }
+
     match verification.same_plugin {
         Some(true) => lines.push("  ok       produced by the plugin installed here".to_owned()),
         Some(false) => {
@@ -242,6 +316,7 @@ pub fn render_json(verification: &Verification) -> String {
         "findingCount": verification.finding_count,
         "provenance": verification.provenance,
         "samePlugin": verification.same_plugin,
+        "unlisted": verification.unlisted,
         "manifestForm": match &verification.manifest_form {
             None => serde_json::Value::Null,
             Some(ManifestForm::FromTheWriter) => serde_json::json!({ "fromTheWriter": true }),
@@ -298,6 +373,7 @@ mod tests {
             }),
             same_plugin: None,
             manifest_form: None,
+            unlisted: Vec::new(),
         };
 
         let rendered = render(&verification, Path::new("/scan"));
@@ -314,6 +390,7 @@ mod tests {
             provenance: None,
             same_plugin: None,
             manifest_form: None,
+            unlisted: Vec::new(),
         };
 
         let rendered = render(&verification, Path::new("/scan"));
@@ -330,6 +407,7 @@ mod tests {
             provenance: None,
             same_plugin: None,
             manifest_form: None,
+            unlisted: Vec::new(),
         };
 
         let rendered = render(&verification, Path::new("/scan"));
@@ -352,6 +430,7 @@ mod tests {
             provenance: None,
             same_plugin: None,
             manifest_form: None,
+            unlisted: Vec::new(),
         };
 
         assert!(!verification.holds());
@@ -372,6 +451,7 @@ mod plugin_tests {
             provenance: None,
             same_plugin,
             manifest_form: None,
+            unlisted: Vec::new(),
         }
     }
 
@@ -423,6 +503,7 @@ mod manifest_form_tests {
             provenance: None,
             same_plugin: None,
             manifest_form,
+            unlisted: Vec::new(),
         }
     }
 
@@ -530,5 +611,93 @@ mod manifest_form_tests {
             // manifest here — and that is a separate answer from this one.
             assert!(verification.contract_failure.is_some(), "{name}");
         }
+    }
+}
+
+#[cfg(test)]
+mod unlisted_tests {
+    use super::*;
+
+    fn scan_with(entries: &[(&str, &str)]) -> tempfile::TempDir {
+        let directory = tempfile::tempdir().expect("a directory");
+        std::fs::write(
+            directory.path().join("scan-manifest.json"),
+            serde_json::json!({
+                "scan": { "artifacts": [
+                    { "path": "findings.json" },
+                    { "path": "artifacts/02_discovery/ledger.jsonl" },
+                ]}
+            })
+            .to_string(),
+        )
+        .expect("writes");
+        for (name, body) in entries {
+            std::fs::write(directory.path().join(name), body).expect("writes");
+        }
+        directory
+    }
+
+    /// The real case: the agent wrote five Python scripts into the output
+    /// directory while finishing a scan. `verify` said the results were
+    /// consistent and nothing about the scripts.
+    #[test]
+    fn names_files_the_contract_does_not_account_for() {
+        let directory = scan_with(&[
+            ("findings.json", "{}"),
+            ("fix_identity.py", "# agent's"),
+            ("threat_model.md", "notes"),
+        ]);
+
+        let unlisted = unlisted_entries(directory.path());
+
+        assert_eq!(unlisted, vec!["fix_identity.py", "threat_model.md"]);
+    }
+
+    /// Everything the contract names, and the two files this tool writes, are
+    /// expected — or the note fires on every scan and stops being read.
+    #[test]
+    fn says_nothing_about_what_belongs_there() {
+        let directory = scan_with(&[
+            ("findings.json", "{}"),
+            ("coverage.json", "{}"),
+            ("report.md", "#"),
+            ("provenance.json", "{}"),
+        ]);
+        std::fs::create_dir(directory.path().join("exports")).expect("creates");
+        std::fs::create_dir(directory.path().join("artifacts")).expect("creates");
+
+        assert!(unlisted_entries(directory.path()).is_empty());
+    }
+
+    /// It is a note, never a verdict: the sealed documents are still verified,
+    /// and failing here would say the results are wrong when they are not.
+    #[test]
+    fn unlisted_files_do_not_fail_the_verdict() {
+        let verification = Verification {
+            contract_failure: None,
+            finding_count: Some(2),
+            provenance: None,
+            same_plugin: None,
+            manifest_form: None,
+            unlisted: vec!["fix_identity.py".to_owned()],
+        };
+
+        assert!(verification.holds());
+        let rendered = render(&verification, Path::new("/scan"));
+        assert!(rendered.contains("does not list"), "{rendered}");
+        assert!(rendered.contains("fix_identity.py"), "{rendered}");
+        // And says what "verified" did and did not cover.
+        assert!(
+            rendered.contains("Verified covers what the manifest names"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("These results are internally consistent."));
+    }
+
+    /// A directory that cannot be read yields nothing rather than an error: the
+    /// contract failure above will already have said so.
+    #[test]
+    fn an_unreadable_directory_yields_nothing() {
+        assert!(unlisted_entries(Path::new("/does/not/exist")).is_empty());
     }
 }
