@@ -142,6 +142,15 @@ fn login(options: &cli::LoginArgs) -> std::process::ExitCode {
 fn scan(options: &cli::ScanArgs) -> std::process::ExitCode {
     use std::io::IsTerminal;
 
+    if options.dangerously_disable_sandbox {
+        eprintln!(
+            "codex-security: WARNING: the sandbox is off. The agent's shell commands run with \
+             your access to this machine, over a repository being scanned because it is not \
+             trusted. Prefer a host where the Codex sandbox works, or a container dedicated to \
+             this scan."
+        );
+    }
+
     let cancellation = std::sync::Arc::new(codex_security::api::ScanCancellation::new());
     let interrupted = commands::progress::install_interrupt_handler(&cancellation);
     // Progress is for a person; a structured report has no room for it.

@@ -240,6 +240,17 @@ pub struct ScanArgs {
         requires = "base_url"
     )]
     pub api_key_env: String,
+    /// Run the agent's commands with no sandbox. DANGEROUS.
+    ///
+    /// A scan runs shell commands chosen by the model over a repository you do
+    /// not necessarily trust, and the sandbox is what keeps that to the
+    /// workspace. Without it, those commands have your access to this machine.
+    ///
+    /// Only for a host already confined by something else — a container or a
+    /// throwaway VM. Prefer running where the Codex sandbox works: a container
+    /// configured to permit bubblewrap, or a dedicated one per scan.
+    #[arg(long, visible_alias = "yolo")]
+    pub dangerously_disable_sandbox: bool,
     /// Exit 1 for findings at or above LEVEL.
     #[arg(long, value_enum, value_name = "LEVEL")]
     pub fail_on_severity: Option<Severity>,
@@ -463,6 +474,17 @@ pub struct InfoArgs {
 pub struct InstallHookArgs {
     /// Repository to install the hook into (default: current directory).
     pub repository: Option<PathBuf>,
+    /// Run the agent's commands with no sandbox. DANGEROUS.
+    ///
+    /// A scan runs shell commands chosen by the model over a repository you do
+    /// not necessarily trust, and the sandbox is what keeps that to the
+    /// workspace. Without it, those commands have your access to this machine.
+    ///
+    /// Only for a host already confined by something else — a container or a
+    /// throwaway VM. Prefer running where the Codex sandbox works: a container
+    /// configured to permit bubblewrap, or a dedicated one per scan.
+    #[arg(long, visible_alias = "yolo")]
+    pub dangerously_disable_sandbox: bool,
     /// Exit 1 for findings at or above LEVEL.
     #[arg(long, value_enum, default_value = "high", value_name = "LEVEL")]
     pub fail_on_severity: Severity,

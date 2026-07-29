@@ -646,7 +646,8 @@ impl ScanRun<'_> {
                 .skip_git_repo_check(true)
                 .approval_policy("never")
                 .config_override(format!("default_permissions=\"{SCAN_PERMISSION_PROFILE}\""))
-                .config_override("allow_login_shell=false"),
+                .config_override("allow_login_shell=false")
+                .bypass_sandbox(self.options.bypass_sandbox),
         );
 
         let tracker = {

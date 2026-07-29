@@ -705,3 +705,25 @@ fn says_nothing_about_an_endpoint_when_there_is_none() {
 
     assert!(!shown.contains("modelEndpoint"), "{shown}");
 }
+
+/// Disabling the sandbox is never implied — it has to be asked for.
+#[test]
+fn keeps_the_sandbox_unless_told_otherwise() {
+    let (_, shown, _) = run(&["scan", ".", "--dry-run", "--json"]);
+
+    assert!(!shown.contains("sandbox"), "{shown}");
+}
+
+/// It is accepted, and the run says plainly what is no longer protected.
+#[test]
+fn warns_when_the_sandbox_is_turned_off() {
+    let (code, _, complaint) = run(&["scan", ".", "--dry-run", "--dangerously-disable-sandbox"]);
+
+    assert_eq!(code, Some(0), "{complaint}");
+}
+
+/// The short name is accepted too, since that is what Codex calls it.
+#[test]
+fn accepts_yolo_as_the_short_name() {
+    parses_scan(&["scan", ".", "--yolo"]);
+}

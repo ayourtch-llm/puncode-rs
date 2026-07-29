@@ -161,6 +161,12 @@ pub struct ThreadOptions {
     pub approval_policy: Option<String>,
     pub model: Option<String>,
     pub sandbox_mode: Option<String>,
+    /// Run commands with no sandbox at all.
+    ///
+    /// Codex calls this "dangerously bypass approvals and sandbox" and means
+    /// it: the agent's commands run with this process's own access. Only for a
+    /// host that is already confined by something else.
+    pub bypass_sandbox: bool,
     pub additional_directories: Vec<PathBuf>,
     pub config_overrides: Vec<String>,
     /// Resume an existing thread instead of starting a new one.
@@ -209,6 +215,13 @@ impl ThreadOptions {
     #[must_use]
     pub fn sandbox_mode(mut self, mode: impl Into<String>) -> Self {
         self.sandbox_mode = Some(mode.into());
+        self
+    }
+
+    /// Runs commands unsandboxed. See [`ThreadOptions::bypass_sandbox`].
+    #[must_use]
+    pub fn bypass_sandbox(mut self, bypass: bool) -> Self {
+        self.bypass_sandbox = bypass;
         self
     }
 
@@ -503,7 +516,11 @@ impl ProcessCodexThread {
         if let Some(model) = &options.model {
             command.arg("--model").arg(model);
         }
-        if let Some(sandbox) = &options.sandbox_mode {
+        if options.bypass_sandbox {
+            // Codex refuses a sandbox mode alongside this, and it would be
+            // meaningless anyway.
+            command.arg("--dangerously-bypass-approvals-and-sandbox");
+        } else if let Some(sandbox) = &options.sandbox_mode {
             command.arg("--sandbox").arg(sandbox);
         }
         if let Some(directory) = &options.working_directory {

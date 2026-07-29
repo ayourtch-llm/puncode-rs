@@ -178,6 +178,13 @@ pub struct ScanOptions {
     pub failure_severity: Option<String>,
     /// Stops the scan once the estimated spend passes this many dollars.
     pub max_cost_usd: Option<f64>,
+    /// Run the agent's commands with no sandbox.
+    ///
+    /// The scan's own sandbox cannot be weakened by configuration, on purpose.
+    /// This is the one way past it, and it is not a configuration value: a
+    /// caller has to ask for it in as many words. Only for a host already
+    /// confined by something else, such as a container or a throwaway VM.
+    pub bypass_sandbox: bool,
 }
 
 impl ScanOptions {
@@ -222,6 +229,13 @@ impl ScanOptions {
     #[must_use]
     pub fn with_max_cost_usd(mut self, max_cost_usd: f64) -> Self {
         self.max_cost_usd = Some(max_cost_usd);
+        self
+    }
+
+    /// Runs the agent's commands unsandboxed. See [`ScanOptions::bypass_sandbox`].
+    #[must_use]
+    pub fn with_bypass_sandbox(mut self, bypass: bool) -> Self {
+        self.bypass_sandbox = bypass;
         self
     }
 

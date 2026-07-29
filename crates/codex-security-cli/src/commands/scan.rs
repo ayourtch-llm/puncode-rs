@@ -187,6 +187,7 @@ fn options(arguments: &ScanArgs) -> Result<ScanOptions, String> {
     if let Some(max_cost) = arguments.max_cost {
         options = options.with_max_cost_usd(max_cost);
     }
+    options = options.with_bypass_sandbox(arguments.dangerously_disable_sandbox);
     if let Some(severity) = arguments.fail_on_severity {
         options = options.with_failure_severity(format!("{severity:?}").to_lowercase());
     }

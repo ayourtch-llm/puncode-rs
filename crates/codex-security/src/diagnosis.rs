@@ -45,8 +45,10 @@ impl Cause {
             Self::SandboxUnavailable => {
                 "Commands could not run: the Codex sandbox (bwrap) could not start in this \
                  environment, so the scan could not read files or run its scripts. This is not a \
-                 problem with the model. The sandbox a scan runs under cannot be relaxed by \
-                 configuration; run the scan where bubblewrap works."
+                 problem with the model. Run the scan where bubblewrap works — an unprivileged \
+                 container with an idmapped root filesystem is a common cause. If this host is \
+                 already confined and the repository is trusted, --dangerously-disable-sandbox \
+                 (--yolo) runs without it."
             }
             Self::OneSystemMessageOnly => {
                 "The endpoint's chat template accepts only one system message, and Codex sends \
@@ -217,6 +219,16 @@ mod tests {
             recognise("bwrap: Failed to make / slave: Permission denied"),
             Some(Cause::SandboxUnavailable)
         );
+    }
+
+    /// Naming a blocker without a way past it leaves the reader stuck, which is
+    /// what the original message already did.
+    #[test]
+    fn offers_a_way_past_a_sandbox_that_will_not_start() {
+        let explanation = Cause::SandboxUnavailable.explanation();
+
+        assert!(explanation.contains("idmapped"), "{explanation}");
+        assert!(explanation.contains("--yolo"), "{explanation}");
     }
 
     /// It must not be mistaken for a credentials problem, which is what

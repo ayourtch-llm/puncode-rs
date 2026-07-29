@@ -537,3 +537,31 @@ fn names_itself_as_the_originator_in_a_supplied_environment() {
         "the client should identify itself when the environment does not"
     );
 }
+
+/// The sandbox is on unless it is explicitly turned off.
+#[test]
+fn does_not_disable_the_sandbox_by_default() {
+    let options = ThreadOptions::new();
+
+    assert!(!options.bypass_sandbox);
+}
+
+/// Turning it off has to reach Codex as the flag Codex understands.
+#[test]
+fn asks_codex_to_bypass_its_sandbox_when_told_to() {
+    let options = ThreadOptions::new().bypass_sandbox(true);
+
+    assert!(options.bypass_sandbox);
+}
+
+/// A sandbox mode alongside a bypass would be a contradiction; the bypass wins
+/// and the mode is not also sent, which Codex refuses.
+#[test]
+fn does_not_send_a_sandbox_mode_alongside_a_bypass() {
+    let options = ThreadOptions::new()
+        .sandbox_mode("read-only")
+        .bypass_sandbox(true);
+
+    assert!(options.bypass_sandbox);
+    assert_eq!(options.sandbox_mode.as_deref(), Some("read-only"));
+}

@@ -113,6 +113,9 @@ pub fn scan_arguments(recipe: Option<&Value>, parent_scan_id: &str) -> Result<Sc
         endpoint_compat: Vec::new(),
         capture_traffic: None,
         capture_max_bytes: None,
+        // Never revived from a saved recipe: disabling the sandbox is a
+        // decision for the run in front of you, not one to inherit silently.
+        dangerously_disable_sandbox: false,
         wire_api: crate::cli::WireApi::default(),
         api_key_env: "OPENAI_API_KEY".to_owned(),
         repository: Some(repository.into()),
