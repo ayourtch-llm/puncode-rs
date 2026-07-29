@@ -46,6 +46,12 @@ pub struct AgreedFinding {
     pub runs: Vec<usize>,
     /// How many runs there were in total.
     pub total_runs: usize,
+    /// The weakness class every run in this group named, when they named one.
+    ///
+    /// Runs that named different classes are not in the same group at all —
+    /// see [`merge`] — so this holds at most one value, and holding none means
+    /// no run said.
+    pub cwe: Option<String>,
     /// Severities reported, deduplicated and sorted.
     ///
     /// More than one entry means the runs disagreed about how bad it is.
@@ -107,14 +113,28 @@ pub fn merge(runs: &[Vec<ReportedFinding>]) -> Vec<AgreedFinding> {
         for finding in findings {
             // Only groups this run has not already contributed to, so one run
             // cannot count twice towards its own agreement.
-            let existing = merged
-                .iter_mut()
-                .find(|group| !group.runs.contains(&index) && overlaps(&group.locations, finding));
+            // Same place is not enough. Two runs naming different weaknesses
+            // at one line have not agreed about anything, and merging them
+            // reports agreement where there is none — which is the whole
+            // output of this command. Seen for real: a timing-unsafe
+            // comparison called CWE-208 by one run and CWE-306, weak
+            // authentication, by another, merged into "2 of 7".
+            let existing = merged.iter_mut().find(|group| {
+                !group.runs.contains(&index)
+                    && overlaps(&group.locations, finding)
+                    && compatible_class(group.cwe.as_deref(), finding.cwe.as_deref())
+            });
 
             match existing {
                 Some(group) => {
                     if !group.titles.contains(&finding.title) {
                         group.titles.push(finding.title.clone());
+                    }
+                    // A run that names a class fills one in for a group that
+                    // had none; a group that already has one keeps it, since
+                    // the two were only merged because they agree.
+                    if group.cwe.is_none() {
+                        group.cwe.clone_from(&finding.cwe);
                     }
                     group.runs.push(index);
                     if let Some(severity) = &finding.severity
@@ -126,6 +146,7 @@ pub fn merge(runs: &[Vec<ReportedFinding>]) -> Vec<AgreedFinding> {
                 }
                 None => merged.push(AgreedFinding {
                     titles: vec![finding.title.clone()],
+                    cwe: finding.cwe.clone(),
                     locations: finding.locations.clone(),
                     runs: vec![index],
                     total_runs,
@@ -143,6 +164,19 @@ pub fn merge(runs: &[Vec<ReportedFinding>]) -> Vec<AgreedFinding> {
             .then_with(|| left.headline().cmp(right.headline()))
     });
     merged
+}
+
+/// Whether two stated classes can belong to the same finding.
+///
+/// A run that names no class has not disagreed with anything, so it merges
+/// freely: penalising a scan for leaving a taxonomy field empty would measure
+/// form-filling. Only two runs that both name a class, and name different ones,
+/// are kept apart.
+fn compatible_class(group: Option<&str>, finding: Option<&str>) -> bool {
+    match (group, finding) {
+        (Some(group), Some(finding)) => group.eq_ignore_ascii_case(finding),
+        _ => true,
+    }
 }
 
 /// Whether a finding points anywhere the group already covers.
@@ -436,5 +470,119 @@ mod tests {
         let merged = merge(&[vec![vague], vec![at("specific", "app.py", 10)]]);
 
         assert_eq!(merged.len(), 2, "{merged:?}");
+    }
+}
+
+#[cfg(test)]
+mod class_tests {
+    use super::*;
+
+    fn finding(title: &str, line: u32, cwe: Option<&str>, severity: &str) -> ReportedFinding {
+        ReportedFinding {
+            title: title.to_owned(),
+            severity: Some(severity.to_owned()),
+            cwe: cwe.map(str::to_owned),
+            locations: vec![ReportedLocation {
+                file: "src/server.js".to_owned(),
+                line,
+            }],
+        }
+    }
+
+    /// The real case, from seven runs of the same fixture. One run found the
+    /// timing-unsafe comparison; another found a different weakness at the same
+    /// endpoint — the token travelling in a query string. Merging them reported
+    /// "2 of 7" and a severity dispute, and neither had happened.
+    #[test]
+    fn two_weaknesses_at_one_place_are_not_agreement() {
+        let runs = vec![
+            vec![finding(
+                "Timing side-channel in admin token comparison",
+                35,
+                Some("CWE-208"),
+                "low",
+            )],
+            vec![finding(
+                "Weak authentication in /admin endpoint exposes token via GET",
+                33,
+                Some("CWE-306"),
+                "medium",
+            )],
+        ];
+
+        let merged = merge(&runs);
+
+        assert_eq!(merged.len(), 2, "{merged:?}");
+        for group in &merged {
+            assert_eq!(group.agreement(), 1);
+            // And neither is reported as disputed, because nothing disputed it.
+            assert_eq!(group.severities.len(), 1, "{group:?}");
+        }
+    }
+
+    /// Runs that name the same class still merge however differently they word
+    /// it — scoring on wording would measure vocabulary.
+    #[test]
+    fn the_same_class_merges_across_different_wording() {
+        let runs = vec![
+            vec![finding(
+                "Path traversal in /file",
+                12,
+                Some("CWE-22"),
+                "high",
+            )],
+            vec![finding(
+                "Path Traversal via /file?name= allows arbitrary read",
+                13,
+                Some("CWE-22"),
+                "high",
+            )],
+        ];
+
+        let merged = merge(&runs);
+
+        assert_eq!(merged.len(), 1, "{merged:?}");
+        assert_eq!(merged[0].agreement(), 2);
+        assert_eq!(merged[0].titles.len(), 2);
+        assert_eq!(merged[0].cwe.as_deref(), Some("CWE-22"));
+    }
+
+    /// A run that names no class has not disagreed with anything. Penalising a
+    /// scan for leaving the field empty would measure form-filling.
+    #[test]
+    fn a_run_that_names_no_class_still_merges() {
+        let runs = vec![
+            vec![finding("Path traversal", 12, Some("CWE-22"), "high")],
+            vec![finding("Path traversal", 12, None, "high")],
+        ];
+
+        let merged = merge(&runs);
+
+        assert_eq!(merged.len(), 1, "{merged:?}");
+        assert_eq!(merged[0].agreement(), 2);
+        // The class survives from the run that named one.
+        assert_eq!(merged[0].cwe.as_deref(), Some("CWE-22"));
+    }
+
+    /// And the class is filled in whichever order the runs arrive.
+    #[test]
+    fn the_class_is_taken_from_whichever_run_named_it() {
+        let runs = vec![
+            vec![finding("Path traversal", 12, None, "high")],
+            vec![finding("Path traversal", 12, Some("CWE-22"), "high")],
+        ];
+
+        assert_eq!(merge(&runs)[0].cwe.as_deref(), Some("CWE-22"));
+    }
+
+    /// Case is not a disagreement.
+    #[test]
+    fn class_comparison_ignores_case() {
+        let runs = vec![
+            vec![finding("Traversal", 12, Some("CWE-22"), "high")],
+            vec![finding("Traversal", 12, Some("cwe-22"), "high")],
+        ];
+
+        assert_eq!(merge(&runs).len(), 1);
     }
 }

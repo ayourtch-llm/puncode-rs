@@ -109,6 +109,35 @@ digest logic, which would drift.
 - **Output may not live inside the scanned repository.** Fixtures live in this
   checkout, so the checkout is the protected root and results must go elsewhere.
 
+## consensus overstated agreement, and running it found out
+
+`consensus` had never been pointed at real scans in this session — only unit
+tests. Seven real runs of `link-service` through it, and it reported:
+
+```
+2 of 7   Timing side-channel in admin token comparison  severity disputed: low, medium
+          also called: Weak authentication in /admin endpoint exposes token via GET
+```
+
+Both false. One run found the timing-unsafe comparison (CWE-208); a different
+run found the token travelling in a query string (CWE-306). Two weaknesses at
+one endpoint, merged into one row because merging was **by location alone** —
+the same class-blind defect fixed in `bench` two beats earlier, and here it
+inflates the only number the command produces.
+
+Now `1 of 7` each, with no severity dispute, which matches what reading the runs
+by hand had already established.
+
+**A run that names no class still merges.** Only two runs that both name a class
+and name different ones are kept apart — penalising a scan for leaving a
+taxonomy field empty would measure form-filling.
+
+The direction of the error matters for this command specifically. Overstating
+agreement makes an unstable scanner look stable, which is the dangerous way to
+be wrong; understating it is merely annoying. That is why `consensus` splits on
+a class disagreement while `bench` keeps the match and reports a range — the
+same evidence, two commands, opposite failure costs.
+
 ## Nothing was checking the oracle itself
 
 Every differential test compares the port against a fixture under
