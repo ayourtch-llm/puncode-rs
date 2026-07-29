@@ -331,9 +331,13 @@ work is done.
    separate general behaviour from this model's habits.
 4. **`--exclude` does not exist.** If it is ever added, registration must carry
    it and the hard-coded `excludePaths: []` in `prompt.rs` becomes wrong.
-5. **Upstream feedback.** No shipped skill mentions the workbench contract, and
-   `includePaths`/`excludePaths` have no schema description. That is why a
-   weaker model never finds the rule. Worth reporting upstream.
+5. **Upstream feedback.** Written up in [docs/upstream-report.md](docs/upstream-report.md),
+   with every claim re-checked against the shipped package rather than recalled:
+   `allowedKinds` appears in one file and no skill, 0 of 141 schema properties
+   carry a description, and the scope contract's own fields are named
+   `requiredIncludePaths`/`requiredExcludePaths` while the schemas say only
+   `{"type": "array"}`. **Still to send** — this checkout has no way to open an
+   issue.
 
 ## The corpus checks itself now, because reading it failed twice
 
