@@ -493,6 +493,83 @@ impl BenchmarkReport {
     }
 }
 
+/// What changed between two runs over the same corpus.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Comparison {
+    /// Found before, missed now. The case a job should stop for.
+    pub newly_missed: Vec<String>,
+    /// Missed before, found now.
+    pub newly_found: Vec<String>,
+    /// Severities that moved, as (id, before, after).
+    pub severity_moved: Vec<(String, String, String)>,
+    /// Flaws only one of the runs had a chance to find.
+    ///
+    /// A corpus that grew is not a regression, and neither is one that shrank.
+    pub not_comparable: Vec<String>,
+}
+
+impl Comparison {
+    /// Whether something that used to be found is no longer found.
+    #[must_use]
+    pub fn regressed(&self) -> bool {
+        !self.newly_missed.is_empty()
+    }
+}
+
+/// Compares a run against an earlier one.
+///
+/// Only flaws both runs could have found are judged. Model output varies
+/// between runs, so a single difference is weak evidence either way — this
+/// reports what moved, not what it means.
+#[must_use]
+pub fn compare(before: &BenchmarkReport, after: &BenchmarkReport) -> Comparison {
+    use std::collections::BTreeMap;
+
+    let index = |report: &BenchmarkReport| -> BTreeMap<String, (bool, Option<String>)> {
+        report
+            .scores
+            .iter()
+            .flat_map(|score| &score.outcomes)
+            .map(|outcome| {
+                (
+                    outcome.flaw_id.clone(),
+                    (outcome.found(), outcome.reported_severity.clone()),
+                )
+            })
+            .collect()
+    };
+    let (before, after) = (index(before), index(after));
+
+    let mut comparison = Comparison::default();
+    for (id, (found_after, severity_after)) in &after {
+        let Some((found_before, severity_before)) = before.get(id) else {
+            comparison.not_comparable.push(id.clone());
+            continue;
+        };
+        match (found_before, found_after) {
+            (true, false) => comparison.newly_missed.push(id.clone()),
+            (false, true) => comparison.newly_found.push(id.clone()),
+            _ => {}
+        }
+        if let (Some(before), Some(after)) = (severity_before, severity_after)
+            && !before.eq_ignore_ascii_case(after)
+        {
+            comparison
+                .severity_moved
+                .push((id.clone(), before.clone(), after.clone()));
+        }
+    }
+    // A flaw the earlier run had and this one does not is equally uncomparable.
+    for id in before.keys() {
+        if !after.contains_key(id) {
+            comparison.not_comparable.push(id.clone());
+        }
+    }
+    comparison.not_comparable.sort();
+    comparison.not_comparable.dedup();
+    comparison
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1130,5 +1207,105 @@ mod severity_tests {
 
         assert_eq!(report.severity_agreement(), None);
         assert!(report.severity_disagreements().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod comparison_tests {
+    use super::*;
+
+    fn report(entries: &[(&str, bool, Option<&str>)]) -> BenchmarkReport {
+        BenchmarkReport {
+            scores: vec![FixtureScore {
+                fixture: "f".to_owned(),
+                control: false,
+                outcomes: entries
+                    .iter()
+                    .map(|(id, found, severity)| FlawOutcome {
+                        flaw_id: (*id).to_owned(),
+                        cwe: None,
+                        found_as: found.then(|| "found".to_owned()),
+                        expected_severity: None,
+                        reported_severity: severity.map(str::to_owned),
+                    })
+                    .collect(),
+                unmatched: Vec::new(),
+                decoys_tripped: Vec::new(),
+            }],
+        }
+    }
+
+    /// The case a job should stop for.
+    #[test]
+    fn names_what_stopped_being_found() {
+        let comparison = compare(
+            &report(&[("a", true, None), ("b", true, None)]),
+            &report(&[("a", true, None), ("b", false, None)]),
+        );
+
+        assert_eq!(comparison.newly_missed, ["b"]);
+        assert!(comparison.regressed());
+    }
+
+    /// Only reporting the bad direction makes a tool feel like a nag.
+    #[test]
+    fn names_what_started_being_found() {
+        let comparison = compare(
+            &report(&[("a", false, None)]),
+            &report(&[("a", true, None)]),
+        );
+
+        assert_eq!(comparison.newly_found, ["a"]);
+        assert!(!comparison.regressed());
+    }
+
+    /// A corpus that grew is not a regression.
+    #[test]
+    fn a_flaw_the_earlier_run_never_had_is_not_a_regression() {
+        let comparison = compare(
+            &report(&[("a", true, None)]),
+            &report(&[("a", true, None), ("new", false, None)]),
+        );
+
+        assert!(!comparison.regressed(), "{comparison:?}");
+        assert_eq!(comparison.not_comparable, ["new"]);
+    }
+
+    /// Nor is one that shrank.
+    #[test]
+    fn a_flaw_dropped_from_the_corpus_is_not_a_regression() {
+        let comparison = compare(
+            &report(&[("a", true, None), ("gone", true, None)]),
+            &report(&[("a", true, None)]),
+        );
+
+        assert!(!comparison.regressed());
+        assert_eq!(comparison.not_comparable, ["gone"]);
+    }
+
+    /// A flaw still found but rated lower is worth seeing: a reviewer working
+    /// down a list by severity reaches it later, or not at all.
+    #[test]
+    fn notices_a_severity_that_moved() {
+        let comparison = compare(
+            &report(&[("a", true, Some("critical"))]),
+            &report(&[("a", true, Some("medium"))]),
+        );
+
+        assert_eq!(
+            comparison.severity_moved,
+            [("a".to_owned(), "critical".to_owned(), "medium".to_owned())]
+        );
+        // Not a regression on its own; the flaw is still found.
+        assert!(!comparison.regressed());
+    }
+
+    #[test]
+    fn two_identical_runs_differ_in_nothing() {
+        let run = report(&[("a", true, Some("high")), ("b", false, None)]);
+
+        let comparison = compare(&run, &run);
+
+        assert_eq!(comparison, Comparison::default());
     }
 }

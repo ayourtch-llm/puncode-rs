@@ -265,6 +265,31 @@ Three deliberate choices:
 - **A rate over nothing is reported as unmeasured, not as zero.** They are
   different facts, and zero reads as total failure.
 
+### Comparing against an earlier run
+
+```sh
+puncode-security bench <results> --baseline <earlier-results>
+```
+
+```
+Against the baseline
+
+  LOST     timing-unsafe-compare was found before and is not found now
+  moved    use-after-free: medium then, high now
+
+One run is weak evidence: this model's output varies between runs over unchanged
+code. Repeat before concluding something broke.
+```
+
+Real output from two runs of this corpus. A floor tells you the rate moved; this
+tells you *what* moved, which is the question worth asking over time. Exits 1
+when something that used to be found is no longer found.
+
+Flaws only one run could have found — because the corpus grew or shrank — are
+reported as not compared rather than counted either way. And a red result says
+plainly that one run is weak evidence, because this model's output varies over
+unchanged code and a regression seen once may be nothing.
+
 ### Using it as a gate
 
 ```sh

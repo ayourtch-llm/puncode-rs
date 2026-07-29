@@ -8,8 +8,8 @@
 use std::path::Path;
 
 use puncode_security::benchmark::{
-    BenchmarkReport, GroundTruth, ReportedFinding, ReportedLocation, Shortfall, Thresholds,
-    score_fixture,
+    BenchmarkReport, Comparison, GroundTruth, ReportedFinding, ReportedLocation, Shortfall,
+    Thresholds, compare, score_fixture,
 };
 use serde_json::Value;
 
@@ -182,6 +182,66 @@ pub fn shortfalls(
         min_detection,
         max_false_positives,
     })
+}
+
+/// What changed between an earlier run and this one.
+pub fn against_baseline(
+    ground_truth: &Path,
+    baseline: &Path,
+    current: &Report,
+    corpus_root: &Path,
+) -> Result<Comparison, String> {
+    let earlier = run(ground_truth, baseline, corpus_root)?;
+    Ok(compare(&earlier.report, &current.report))
+}
+
+/// The comparison, for a person.
+#[must_use]
+pub fn render_comparison(comparison: &Comparison) -> String {
+    let mut lines = vec![
+        String::new(),
+        "Against the baseline".to_owned(),
+        String::new(),
+    ];
+
+    if comparison.newly_missed.is_empty()
+        && comparison.newly_found.is_empty()
+        && comparison.severity_moved.is_empty()
+    {
+        lines.push("  nothing changed".to_owned());
+    }
+    for id in &comparison.newly_missed {
+        lines.push(format!(
+            "  LOST     {id} was found before and is not found now"
+        ));
+    }
+    for id in &comparison.newly_found {
+        lines.push(format!("  gained   {id} is found now and was not before"));
+    }
+    for (id, before, after) in &comparison.severity_moved {
+        lines.push(format!("  moved    {id}: {before} then, {after} now"));
+    }
+    if !comparison.not_comparable.is_empty() {
+        // Said rather than silently skipped: a corpus that changed shape is not
+        // a regression, but pretending those flaws were compared would be a lie.
+        lines.push(format!(
+            "  {} flaw(s) only one run could find, so not compared: {}",
+            comparison.not_comparable.len(),
+            comparison.not_comparable.join(", ")
+        ));
+    }
+
+    if comparison.regressed() {
+        lines.push(String::new());
+        // A red result must not imply more certainty than one run supports.
+        lines.push(
+            "One run is weak evidence: this model's output varies between runs over unchanged"
+                .to_owned(),
+        );
+        lines.push("code. Repeat before concluding something broke.".to_owned());
+    }
+
+    lines.join("\n")
 }
 
 /// The report, for a person.

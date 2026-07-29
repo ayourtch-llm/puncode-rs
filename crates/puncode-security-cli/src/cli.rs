@@ -100,6 +100,13 @@ pub struct BenchArgs {
     /// Fail if more than this many findings matched nothing planted.
     #[arg(long, value_name = "N")]
     pub max_false_positives: Option<usize>,
+    /// Compare against an earlier run's results and report what changed.
+    ///
+    /// Fails when something that used to be found is no longer found. More
+    /// useful than an absolute floor, because it names what regressed rather
+    /// than only that the rate moved.
+    #[arg(long, value_name = "RESULTS")]
+    pub baseline: Option<PathBuf>,
     #[command(flatten)]
     pub output: OutputOptions,
 }

@@ -371,10 +371,34 @@ fn bench(options: &cli::BenchArgs) -> std::process::ExitCode {
     let shortfalls =
         commands::bench::shortfalls(&outcome, options.min_detection, options.max_false_positives);
 
+    let comparison = match &options.baseline {
+        Some(baseline) => match commands::bench::against_baseline(
+            &options.ground_truth,
+            baseline,
+            &outcome,
+            &options.corpus_root,
+        ) {
+            Ok(comparison) => Some(comparison),
+            Err(problem) => {
+                eprintln!("puncode-security: could not read the baseline: {problem}");
+                return std::process::ExitCode::from(exit::ERROR);
+            }
+        },
+        None => None,
+    };
+
     if options.output.resolved().is_structured() {
         println!("{}", commands::bench::render_json(&outcome, &shortfalls));
     } else {
         println!("{}", commands::bench::render(&outcome));
+        if let Some(comparison) = &comparison {
+            println!("{}", commands::bench::render_comparison(comparison));
+        }
+    }
+
+    if comparison.is_some_and(|comparison| comparison.regressed()) {
+        eprintln!("puncode-security: something that used to be found is no longer found.");
+        return std::process::ExitCode::from(exit::FINDINGS);
     }
 
     if shortfalls.is_empty() {
