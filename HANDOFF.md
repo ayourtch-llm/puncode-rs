@@ -352,6 +352,16 @@ directory of output per run and a **fresh copy of the target per run**.
 over the target for it as well as for the working-tree failure — the workbench
 can say the target moved and cannot say what moved.
 
+`--repeat` also says it **when it happens** rather than leaving four failures to
+be explained at the end: after each run but the last, it checks the target and
+names what was left there. The check stays quiet for the final run, for a clean
+target, and for a target that is not a git repository — there is nothing to
+compare against, and a warning nobody can act on is noise.
+
+**Not attempted: cleaning up after the agent.** Deleting files from the code
+somebody asked to have scanned is not a thing this tool should do, whatever the
+files look like.
+
 **It does not invalidate detection data**, and it does change how to describe it:
 the findings in those runs are on disk and complete, but they are partial output
 from scans the workbench never recorded. Say "what the model reported", not

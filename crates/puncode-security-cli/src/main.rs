@@ -139,6 +139,36 @@ fn login(options: &cli::LoginArgs) -> std::process::ExitCode {
 /// The report goes to standard output and everything else to standard error,
 /// so a redirected report stays parseable. The exit code is what a CI job acts
 /// on, so it is returned rather than folded into the usual success path.
+/// What the run left behind in the code it was scanning, if anything.
+///
+/// Only asked between repeats: a single scan that dirties the target harms
+/// nothing, while the second run of a repeat is already doomed by it. Returns
+/// nothing for a target that is not a git repository, since there is then
+/// nothing to compare against.
+fn target_polluted(options: &cli::ScanArgs, run: usize) -> Option<Vec<String>> {
+    let repository = options
+        .repository
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| ".".into()));
+    pollution_between_runs(&repository, run, options.repeat)
+}
+
+/// The same decision, without the argument struct, so it can be tested.
+fn pollution_between_runs(
+    repository: &std::path::Path,
+    run: usize,
+    repeat: usize,
+) -> Option<Vec<String>> {
+    // Nothing to warn about after the last run: there is no later run to be
+    // spoiled, and a scan that dirties a target it has finished with harms
+    // nothing.
+    if run >= repeat {
+        return None;
+    }
+    let changed = puncode_security::diagnosis::changed_paths(repository);
+    (!changed.is_empty()).then_some(changed)
+}
+
 /// Runs a scan, or several, reporting how much repeated runs agreed.
 ///
 /// Repeats are sequential. Several scans at once against one endpoint contend
@@ -183,6 +213,24 @@ fn scan(options: &cli::ScanArgs) -> std::process::ExitCode {
             .map(|path| capture_for_run(path, run));
 
         let code = scan_once(&once);
+        // Said the moment it happens, not left to be inferred from four
+        // failures at the end. The agent writes working files, and some land in
+        // the repository it is reading rather than in the output directory;
+        // once the tree is dirty every later run is refused, because the target
+        // no longer matches what the scan was registered against.
+        if let Some(changed) = target_polluted(options, run) {
+            eprintln!(
+                "puncode-security: run {run} left the scanned code changed, so the runs after it \
+                 will not save:"
+            );
+            for path in changed {
+                eprintln!("puncode-security:   {path}");
+            }
+            eprintln!(
+                "puncode-security: repeats are only comparable over unchanged code. Scan a fresh \
+                 copy per run."
+            );
+        }
         // A run that failed is named rather than swallowed; the rest are still
         // worth comparing, and a partial answer beats none.
         if code != std::process::ExitCode::from(exit::SUCCESS) {
@@ -665,5 +713,67 @@ fn main() -> std::process::ExitCode {
             eprintln!("puncode-security: {problem}");
             std::process::ExitCode::from(exit::ERROR)
         }
+    }
+}
+
+#[cfg(test)]
+mod repeat_tests {
+    use super::pollution_between_runs;
+
+    fn repository() -> tempfile::TempDir {
+        let directory = tempfile::tempdir().expect("a directory");
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(directory.path())
+                .args(args)
+                .output()
+                .expect("git runs");
+        };
+        run(&["init", "-q"]);
+        run(&["config", "user.email", "t@example.com"]);
+        run(&["config", "user.name", "t"]);
+        std::fs::write(directory.path().join("a.py"), "x = 1\n").expect("writes");
+        run(&["add", "-A"]);
+        run(&["commit", "-qm", "one"]);
+        directory
+    }
+
+    /// The real case: the agent leaves its candidate ledger in the code it was
+    /// reading, and every run after this one is refused because the target no
+    /// longer matches its registration.
+    #[test]
+    fn a_run_that_dirties_the_target_is_reported_while_runs_remain() {
+        let directory = repository();
+        std::fs::write(directory.path().join("raw_candidates.jsonl"), "{}\n").expect("writes");
+
+        let changed = pollution_between_runs(directory.path(), 1, 5).expect("a warning");
+
+        assert_eq!(changed, vec!["?? raw_candidates.jsonl"]);
+    }
+
+    /// Nothing is said after the last run. There is no later run to spoil, and
+    /// a warning nobody can act on is noise.
+    #[test]
+    fn the_last_run_is_not_warned_about() {
+        let directory = repository();
+        std::fs::write(directory.path().join("raw_candidates.jsonl"), "{}\n").expect("writes");
+
+        assert_eq!(pollution_between_runs(directory.path(), 5, 5), None);
+    }
+
+    #[test]
+    fn a_clean_target_says_nothing() {
+        assert_eq!(pollution_between_runs(repository().path(), 1, 5), None);
+    }
+
+    /// A target that is not a git repository cannot be compared against
+    /// anything, so nothing is claimed about it.
+    #[test]
+    fn a_target_outside_git_says_nothing() {
+        let directory = tempfile::tempdir().expect("a directory");
+        std::fs::write(directory.path().join("a.py"), "x = 1\n").expect("writes");
+
+        assert_eq!(pollution_between_runs(directory.path(), 1, 5), None);
     }
 }
