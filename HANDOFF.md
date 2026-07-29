@@ -146,6 +146,24 @@ reported as a missed vulnerability, because it might not be one.
 operators for other languages. The library is the bounded piece; the rest is a
 project, not a beat.
 
+### First readings, 2026-07-29 18:22
+
+Three mutants scanned one after another, each a repository that is the control
+fixture with exactly one protection broken.
+
+- **`bind-to-concat`: caught.** `CWE-89`, high, "SQL injection via direct string
+  concatenation in find_item", the right function, coverage complete, no
+  deferrals, exit 0. All six cited locations resolve. The scanner found an
+  injected flaw in code it had reported clean five times.
+
+The other two are still running; results go here when they land.
+
+**A control this experiment still needs.** The five clean runs of the unmutated
+fixture went through `scan-fixtures.sh`, not through the script used here. Until
+the original is scanned through the *same* harness, a positive is very likely
+the mutation and not certainly so. One scan, and it must not run alongside the
+others — the endpoint takes one at a time.
+
 ## Two workbench databases exist, and only one is live
 
 `~/.codex/state/plugins/codex-security/workbench.sqlite3` holds the 79 scans
