@@ -44,6 +44,25 @@ pub struct PlantedFlaw {
     pub summary: Option<String>,
 }
 
+/// Code written to resemble something unsafe while being safe.
+///
+/// A finding against one of these is a false positive of the kind that costs
+/// most: the reviewer has to read it to discover it is wrong. An empty control
+/// only asks whether a scanner invents findings from nothing, which is the easy
+/// case.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Decoy {
+    pub id: String,
+    pub file: String,
+    pub lines: (u32, u32),
+    /// The class it is written to look like.
+    #[serde(default)]
+    pub resembles: Option<String>,
+    /// Why it is genuinely safe.
+    #[serde(default)]
+    pub safe_because: Option<String>,
+}
+
 /// One fixture and everything planted in it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fixture {
@@ -56,6 +75,9 @@ pub struct Fixture {
     /// A fixture with nothing planted, kept to measure false positives.
     #[serde(default)]
     pub control: bool,
+    /// Safe code written to look unsafe.
+    #[serde(default)]
+    pub decoys: Vec<Decoy>,
 }
 
 /// The corpus as a whole.
@@ -120,6 +142,12 @@ pub struct FixtureScore {
     /// On a control fixture every finding lands here, which is the point of
     /// having one.
     pub unmatched: Vec<String>,
+    /// Decoys a finding was reported against, by decoy id.
+    ///
+    /// Reported apart from other noise: being fooled by code written to look
+    /// dangerous is a different failure from inventing something out of thin
+    /// air, and says more about how a scanner will behave on real code.
+    pub decoys_tripped: Vec<String>,
 }
 
 impl FixtureScore {
@@ -172,11 +200,26 @@ pub fn score_fixture(fixture: &Fixture, findings: &[ReportedFinding]) -> Fixture
         });
     }
 
-    let unmatched = findings
+    let unmatched: Vec<String> = findings
         .iter()
         .enumerate()
         .filter(|(index, _)| !claimed[*index])
         .map(|(_, finding)| finding.title.clone())
+        .collect();
+
+    // Which of the unmatched findings landed on something written to look
+    // dangerous. A finding may trip a decoy and still be counted once as noise;
+    // this names what it was fooled by.
+    let decoys_tripped = fixture
+        .decoys
+        .iter()
+        .filter(|decoy| {
+            findings
+                .iter()
+                .enumerate()
+                .any(|(index, finding)| !claimed[index] && cites_decoy(finding, decoy))
+        })
+        .map(|decoy| decoy.id.clone())
         .collect();
 
     FixtureScore {
@@ -184,7 +227,15 @@ pub fn score_fixture(fixture: &Fixture, findings: &[ReportedFinding]) -> Fixture
         control: fixture.control,
         outcomes,
         unmatched,
+        decoys_tripped,
     }
+}
+
+/// Whether a finding points at a decoy.
+fn cites_decoy(finding: &ReportedFinding, decoy: &Decoy) -> bool {
+    finding.locations.iter().any(|location| {
+        same_file(&location.file, &decoy.file) && within_tolerance(location.line, decoy.lines)
+    })
 }
 
 /// Whether a finding points at where a flaw was planted.
@@ -239,6 +290,15 @@ impl BenchmarkReport {
     #[must_use]
     pub fn false_positives(&self) -> usize {
         self.scores.iter().map(|score| score.unmatched.len()).sum()
+    }
+
+    /// Decoys tripped anywhere in the corpus.
+    #[must_use]
+    pub fn decoys_tripped(&self) -> Vec<&str> {
+        self.scores
+            .iter()
+            .flat_map(|score| score.decoys_tripped.iter().map(String::as_str))
+            .collect()
     }
 
     /// False positives from fixtures with nothing planted at all.
@@ -403,6 +463,7 @@ mod tests {
             language: None,
             flaws,
             control: false,
+            decoys: Vec::new(),
         }
     }
 
@@ -685,6 +746,7 @@ mod threshold_tests {
                 control: false,
                 outcomes,
                 unmatched: (0..unmatched).map(|i| format!("noise {i}")).collect(),
+                decoys_tripped: Vec::new(),
             }],
         }
     }
@@ -786,5 +848,118 @@ mod threshold_tests {
                 .shortfalls(&Thresholds::default())
                 .is_empty()
         );
+    }
+}
+
+#[cfg(test)]
+mod decoy_tests {
+    use super::*;
+
+    fn control_with_decoy() -> Fixture {
+        Fixture {
+            name: "clean".to_owned(),
+            path: "fixtures/clean".to_owned(),
+            language: None,
+            flaws: Vec::new(),
+            control: true,
+            decoys: vec![Decoy {
+                id: "sql-placeholders-from-count".to_owned(),
+                file: "src/inventory.py".to_owned(),
+                lines: (55, 57),
+                resembles: Some("CWE-89".to_owned()),
+                safe_because: Some("placeholders come from the count".to_owned()),
+            }],
+        }
+    }
+
+    fn finding(title: &str, line: u32) -> ReportedFinding {
+        ReportedFinding {
+            title: title.to_owned(),
+            severity: None,
+            locations: vec![ReportedLocation {
+                file: "src/inventory.py".to_owned(),
+                line,
+            }],
+        }
+    }
+
+    /// Being fooled by code written to look dangerous is a different failure
+    /// from inventing something from nothing, and says more about how a scanner
+    /// behaves on real code.
+    #[test]
+    fn names_the_decoy_a_finding_was_fooled_by() {
+        let score = score_fixture(&control_with_decoy(), &[finding("SQL injection", 56)]);
+
+        assert_eq!(score.decoys_tripped, ["sql-placeholders-from-count"]);
+        // Still counted as noise; the decoy names what it was fooled by.
+        assert_eq!(score.unmatched.len(), 1);
+    }
+
+    #[test]
+    fn a_finding_elsewhere_is_noise_but_not_a_decoy_trip() {
+        let score = score_fixture(&control_with_decoy(), &[finding("something", 500)]);
+
+        assert!(
+            score.decoys_tripped.is_empty(),
+            "{:?}",
+            score.decoys_tripped
+        );
+        assert_eq!(score.unmatched.len(), 1);
+    }
+
+    #[test]
+    fn a_quiet_control_trips_nothing() {
+        let score = score_fixture(&control_with_decoy(), &[]);
+
+        assert!(score.decoys_tripped.is_empty());
+        assert!(score.unmatched.is_empty());
+    }
+
+    /// The shipped corpus must carry decoys, or the control only measures the
+    /// easy case.
+    #[test]
+    fn the_shipped_control_carries_decoys() {
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../benchmark/ground-truth.json"),
+        )
+        .expect("the corpus is shipped");
+        let corpus = GroundTruth::parse(&text).expect("parses");
+
+        let control = corpus.fixture("clean-python").expect("a control");
+        assert!(!control.decoys.is_empty(), "the control has no decoys");
+        for decoy in &control.decoys {
+            assert!(
+                decoy.safe_because.is_some(),
+                "{} does not say why it is safe",
+                decoy.id
+            );
+        }
+    }
+
+    /// Every decoy must point at a line that exists, or the corpus is scoring
+    /// against fiction.
+    #[test]
+    fn every_decoy_points_at_a_real_line() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let text = std::fs::read_to_string(root.join("benchmark/ground-truth.json"))
+            .expect("the corpus is shipped");
+        let corpus = GroundTruth::parse(&text).expect("parses");
+
+        for fixture in &corpus.fixtures {
+            for decoy in &fixture.decoys {
+                let path = root.join(&fixture.path).join(&decoy.file);
+                let body = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|_| panic!("{} names {}", decoy.id, path.display()));
+                let lines = u32::try_from(body.lines().count()).unwrap_or(u32::MAX);
+                assert!(
+                    decoy.lines.0 >= 1 && decoy.lines.1 <= lines,
+                    "{} points at {:?} of a {}-line file",
+                    decoy.id,
+                    decoy.lines,
+                    lines
+                );
+            }
+        }
     }
 }

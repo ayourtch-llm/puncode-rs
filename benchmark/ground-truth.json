@@ -1,5 +1,5 @@
 {
-  "note": "Ground truth for the fixture corpus. Kept outside fixtures/ on purpose: a scan reads its whole target, and a file listing the answers would turn detection into reading. Line numbers are where the flaw is expressed, not where it is reachable from.",
+  "note": "Ground truth for the fixture corpus. Kept outside fixtures/ on purpose: a scan reads its whole target, and a file listing the answers would turn detection into reading. Line numbers are where the flaw is expressed, not where it is reachable from. Fixtures may also carry decoys: code written to resemble something unsafe while being safe. An empty control only asks whether a scanner invents findings from nothing; decoys ask whether it is fooled by plausible code, which is where trust is actually lost. Every decoy records why it is safe, and the non-obvious ones were verified by running attacks against them rather than by reading.",
   "fixtures": [
     {
       "name": "flask-injection",
@@ -9,7 +9,10 @@
         {
           "id": "sqli-user",
           "file": "src/app.py",
-          "lines": [10, 10],
+          "lines": [
+            10,
+            10
+          ],
           "cwe": "CWE-89",
           "severity": "high",
           "summary": "SQL query concatenated from the ?name= request parameter"
@@ -17,7 +20,10 @@
         {
           "id": "cmdi-ping",
           "file": "src/app.py",
-          "lines": [15, 15],
+          "lines": [
+            15,
+            15
+          ],
           "cwe": "CWE-78",
           "severity": "critical",
           "summary": "subprocess with shell=True and the ?host= request parameter"
@@ -32,7 +38,10 @@
         {
           "id": "stack-overflow",
           "file": "src/store.c",
-          "lines": [23, 23],
+          "lines": [
+            23,
+            23
+          ],
           "cwe": "CWE-121",
           "severity": "critical",
           "summary": "strcpy into a 32-byte stack buffer from an unchecked argument"
@@ -40,7 +49,10 @@
         {
           "id": "use-after-free",
           "file": "src/store.c",
-          "lines": [33, 36],
+          "lines": [
+            33,
+            36
+          ],
           "cwe": "CWE-416",
           "severity": "high",
           "summary": "entry freed but left in the table, then read by a later lookup"
@@ -48,7 +60,10 @@
         {
           "id": "off-by-one",
           "file": "src/store.c",
-          "lines": [54, 54],
+          "lines": [
+            54,
+            54
+          ],
           "cwe": "CWE-193",
           "severity": "medium",
           "summary": "bound uses > so index MAX_RECORDS is admitted, one past the last slot"
@@ -63,7 +78,10 @@
         {
           "id": "path-traversal",
           "file": "src/server.js",
-          "lines": [12, 14],
+          "lines": [
+            12,
+            14
+          ],
           "cwe": "CWE-22",
           "severity": "high",
           "summary": "path.join with an unvalidated ?name=, so ../ escapes the public root"
@@ -71,7 +89,10 @@
         {
           "id": "ssrf-preview",
           "file": "src/server.js",
-          "lines": [22, 23],
+          "lines": [
+            22,
+            23
+          ],
           "cwe": "CWE-918",
           "severity": "high",
           "summary": "server-side request to an arbitrary ?url=, reachable to internal addresses"
@@ -79,7 +100,10 @@
         {
           "id": "timing-unsafe-compare",
           "file": "src/server.js",
-          "lines": [35, 35],
+          "lines": [
+            35,
+            35
+          ],
           "cwe": "CWE-208",
           "severity": "low",
           "summary": "admin token compared with === rather than a constant-time comparison"
@@ -92,7 +116,59 @@
       "language": "python",
       "flaws": [],
       "control": true,
-      "why": "Nothing is planted here. Parameterised queries, no shell, no user-controlled paths. Anything reported against this fixture is a false positive, and that number decides whether the tool is worth running."
+      "why": "Nothing is planted here, and several routines are written to resemble things that are usually unsafe. Anything reported against this fixture is a false positive, and that number decides whether the tool is worth running.",
+      "decoys": [
+        {
+          "id": "sql-placeholders-from-count",
+          "file": "src/inventory.py",
+          "lines": [
+            55,
+            57
+          ],
+          "resembles": "CWE-89",
+          "safe_because": "the f-string interpolates placeholders derived from the NUMBER of arguments, never their contents, and every value is still bound. Verified by running injection payloads through it: nothing matched and the table survived."
+        },
+        {
+          "id": "path-join-validated",
+          "file": "src/inventory.py",
+          "lines": [
+            85,
+            88
+          ],
+          "resembles": "CWE-22",
+          "safe_because": "the argument is checked against \\A[A-Za-z0-9-]{1,32}\\Z before use, so it cannot hold a separator or a parent reference. Verified against traversal payloads: all refused."
+        },
+        {
+          "id": "subprocess-list-no-shell",
+          "file": "src/inventory.py",
+          "lines": [
+            98,
+            98
+          ],
+          "resembles": "CWE-78",
+          "safe_because": "arguments are a list and the program is a literal, so no shell parses any of it."
+        },
+        {
+          "id": "fast-hash-for-integrity",
+          "file": "src/inventory.py",
+          "lines": [
+            108,
+            112
+          ],
+          "resembles": "CWE-916",
+          "safe_because": "SHA-256 over file contents to notice a change on disk. There is no password anywhere in this service, so a password hash would be the wrong tool here, not the right one."
+        },
+        {
+          "id": "interpolation-into-prose",
+          "file": "src/inventory.py",
+          "lines": [
+            120,
+            120
+          ],
+          "resembles": "CWE-74",
+          "safe_because": "the string is only ever printed; it reaches no interpreter, query or shell."
+        }
+      ]
     }
   ]
 }

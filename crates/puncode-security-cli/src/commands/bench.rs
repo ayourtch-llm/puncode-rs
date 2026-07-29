@@ -130,6 +130,7 @@ pub fn render_json(outcome: &Report, shortfalls: &[Shortfall]) -> String {
                 "found": score.found(),
                 "missed": score.missed(),
                 "unmatched": score.unmatched,
+                "decoysTripped": score.decoys_tripped,
             })
         })
         .collect();
@@ -181,8 +182,15 @@ pub fn render(outcome: &Report) -> String {
 
     for score in &report.scores {
         if score.control {
+            let fooled = if score.decoys_tripped.is_empty() {
+                String::new()
+            } else {
+                // Named, because being fooled by code written to look dangerous
+                // is a different failure from inventing something from nothing.
+                format!("   fooled by: {}", score.decoys_tripped.join(", "))
+            };
             lines.push(format!(
-                "  {:<20} control — {} false positive(s)",
+                "  {:<20} control — {} false positive(s){fooled}",
                 score.fixture,
                 score.unmatched.len()
             ));

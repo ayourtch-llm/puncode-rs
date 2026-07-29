@@ -48,12 +48,29 @@ Expected: **3 findings**.
 
 ## clean-python
 
-An inventory service with **nothing planted**: parameterised queries, no shell,
-no user-controlled paths. Anything reported here is a false positive. This
-fixture exists because recall alone says nothing about whether a scanner is
-worth running.
+An inventory service with **nothing planted**, and five **decoys** — routines
+written to resemble things that are usually unsafe while being safe:
 
-Expected: **0 findings**.
+| Where | Looks like | Safe because |
+|---|---|---|
+| `find_items` | SQL injection | the f-string interpolates placeholders derived from the *count* of arguments, never their contents; values are still bound |
+| `export_path` | path traversal | the argument is checked against `\A[A-Za-z0-9-]{1,32}\Z` first, so it cannot hold a separator or `..` |
+| `compress_export` | command injection | arguments are a list, program name a literal, no shell involved |
+| `file_digest` | weak password hashing | SHA-256 for file integrity; there is no password in this service |
+| `describe` | injection via interpolation | the string is only ever printed |
+
+An empty control asks only whether a scanner invents findings from nothing,
+which is the easy case. Decoys ask whether it is fooled by plausible code —
+where trust is actually lost, because the reviewer has to read the finding to
+discover it is wrong.
+
+The two that could plausibly have been wrong were verified by running attacks
+against them, not by reading: injection payloads through `find_items` matched
+nothing and left the table intact, and every traversal payload to `export_path`
+was refused.
+
+Expected: **0 findings**. A finding here is reported as a decoy trip, naming
+what fooled it.
 
 ## Running them
 
