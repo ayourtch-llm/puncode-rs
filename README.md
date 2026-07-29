@@ -425,6 +425,56 @@ false flag there costs one glance; a miss costs every number the corpus produces
 The audit is checked against the corpus as it actually was before the fix — it
 finds all ten leaks — and against the corpus as it is now, on every test run.
 
+## Making flaws on purpose
+
+Everything above measures the scanner against flaws somebody thought to plant.
+A corpus only contains what its author imagined, and a score against it says
+nothing about **your** code.
+
+Mutation testing inverts that. Take code that is safe, break one protection in a
+known way, and ask whether the scanner notices. The ground truth needs no
+judgement: the difference between the two files *is* the flaw, and its location
+is exactly where the edit was made.
+
+```sh
+cargo run -p puncode-security --example emit_mutants -- <file> <out-dir>
+```
+
+Three operators ship, each replacing an idiom whose safety is the whole reason
+it is written that way:
+
+| Operator | What it breaks |
+|---|---|
+| `bind-to-concat` | a bound query parameter becomes string concatenation |
+| `drop-validator` | an allowlist check is removed from a path built out of an argument |
+| `list-to-shell` | an argument list becomes a shell command string |
+
+They are applied here to `inventory-service` — the control fixture, which this
+scanner has reported clean in every run — so a mutant is a flaw in code it has
+already cleared.
+
+**Each one was confirmed by attacking it**, against the mutant and the
+unmutated original:
+
+| Operator | Original | Mutant |
+|---|---|---|
+| `bind-to-concat` | injection payload returns nothing | returns the row |
+| `drop-validator` | `../../etc/passwd` refused | resolves outside the export root |
+| `list-to-shell` | passed to gzip as a filename | the injected command ran |
+
+### What it cannot tell you
+
+An operator swaps a safe idiom for an unsafe one. Whether the result is
+reachable from untrusted input is not something reading one function can settle,
+so **a generated mutant is a candidate until somebody confirms it**. Each carries
+`confirmed_by` recording how, and a test refuses to ship an operator without one.
+
+A mutant nobody has confirmed still measures something worth knowing — a
+protection was removed and the scanner said nothing — but it must not be read as
+a missed vulnerability, because it might not be one. `Mutant::as_planted_flaw()`
+carries that distinction into the corpus rather than flattening it, so a score
+built on unconfirmed mutants cannot quietly read as a score over real ones.
+
 ## When the code talks back
 
 This scanner is an agent. It reads every file in the target, and the target is
