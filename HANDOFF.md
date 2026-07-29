@@ -87,9 +87,15 @@ nobody trusts.
    behaviour comes from one local model over roughly fifty scans. A hosted run
    would separate general behaviour from this model's habits. **Cannot be done
    with what is here.**
-2. **The sealed-manifest prompt instruction holds one time in two.** Measured on
-   exactly the two fixtures that failed that way: `orders-api-b` saved cleanly,
-   `link-service` invented a `sealedAt` again. Expect it to recur.
+2. **The sealed-manifest instruction: two of two after naming both halves.**
+   The first version covered only `sealedAt` and held one time in two. After it
+   also named `scan.artifacts` — the other half of the plugin's `was_sealed`
+   test — both fixtures saved cleanly on fresh copies, both manifests written by
+   the plugin's own writer, both targets left clean.
+
+   **Two runs is not proof** of something that previously worked half the time.
+   The evidence is consistent with the fix and does not establish it; run it a
+   few more times before calling it closed.
 3. **Upstream feedback is written and unsent.**
    [docs/upstream-report.md](docs/upstream-report.md) has every claim re-checked
    against the shipped package. This checkout has no way to open an issue.

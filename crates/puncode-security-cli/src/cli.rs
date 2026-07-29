@@ -51,7 +51,7 @@ pub enum Command {
     Logout,
     /// Report versions and configuration.
     Info(InfoArgs),
-    /// Install a Git hook that scans before pushing.
+    /// Install a Git pre-commit security scan.
     InstallHook(InstallHookArgs),
     /// Score scans against a corpus of known flaws.
     Bench(BenchArgs),

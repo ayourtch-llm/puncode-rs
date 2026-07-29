@@ -836,3 +836,21 @@ fn never_prints_credentials_from_an_endpoint_url() {
     }
     assert_eq!(checked, 4);
 }
+
+/// The help must describe the hook that is installed.
+///
+/// It said "scans before pushing" while installing `.git/hooks/pre-commit`.
+/// Upstream calls it "Install a Git pre-commit security scan", the behaviour
+/// matched upstream, and only our wording was wrong — so a reader could believe
+/// their pushes were guarded when nothing was watching them.
+#[test]
+fn install_hook_help_names_the_hook_it_installs() {
+    let (code, stdout, stderr) = run(&["install-hook", "--help"]);
+
+    assert_eq!(code, Some(0), "{stderr}");
+    assert!(stdout.contains("pre-commit"), "{stdout}");
+    assert!(
+        !stdout.to_lowercase().contains("before pushing"),
+        "{stdout}"
+    );
+}
