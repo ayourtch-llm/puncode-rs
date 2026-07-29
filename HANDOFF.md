@@ -241,12 +241,25 @@ complete corpus run once. Do not undo the copy.
 
 Measured results, one model (deepreinforce-ai_Ornith-1.0-35B, local):
 
+Scored against the corpus as it stands, which has nine flaws in these four
+fixtures — the earlier tables said eight, before a real NULL dereference in
+`kv-store` was checked and recorded.
+
 | Run | Detection | False positives | Decoy trips | Corpus |
 |---|---|---|---|---|
-| 12:59 | 7 of 8 | 0 | — (no decoys yet) | answers in the source |
-| 14:53 | 8 of 8 | 0 | 0 of 5 | answers in the source |
-| 15:09 | 7 of 8 | 0 | 0 of 5 | answers in the source |
-| 16:24 | 7 of 8 | 0 | 0 of 5 | **answers removed** |
+| 12:59 | 6–7 of 9 | 0 | — (no decoys yet) | answers in the source |
+| 14:53 | 7–8 of 9 | 0 | 0 of 5 | answers in the source |
+| 15:09 | 7 of 9 | 0 | 0 of 5 | answers in the source |
+| 16:24 | 5–7 of 9 | 0 | 0 of 5 | **answers removed** |
+| 16:31 | 9–11 of 11 | 1 → 0 | 0 of 5 | + the injection twin |
+
+A range wherever some match rests on location alone against a class the scan
+named differently. Both bounds are real and neither is the answer: most of those
+disagreements are a neighbouring name for one flaw (`CWE-121` against
+`CWE-120`, `CWE-193` against `CWE-787`) and one was a different weakness at the
+same line. The named list under the rate is the part to read.
+
+**Every earlier number in this file was a point estimate that hid this.**
 
 Three runs over an unchanged corpus. **Seven of the eight flaws are found every
 time; CWE-208, the timing-unsafe comparison, is found roughly one run in three.**
@@ -446,12 +459,37 @@ and CWE-120 against CWE-121 is the same flaw.
 
 That reporting immediately earned itself: `timing-unsafe-compare` is planted as
 CWE-208 and the model called it CWE-306, missing authentication. It found
-something at that line and classified it as a different weakness, which the
-aggregate rate had been quietly counting as a hit.
+something at that line — the token travels in a query string, which is real —
+and it is not the planted flaw.
 
-**Do not make a class mismatch stop counting as found.** It would reject
-CWE-120/121 and every other near-equivalent, and the corpus is one opinion about
-taxonomy.
+Reading every run back through it gives the honest history of that one flaw:
+**genuinely detected once in five runs** (14:53, "Timing side-channel in admin
+token comparison"). Absent three times, once with a written deferral, and once
+credited to a CWE-306 finding. The beat that reported "3 of 3, the first time
+since 14:53" was wrong, and it was wrong because the rate was a point estimate
+built on location matching.
+
+So the rate is a **range** now: matches whose class the scan contradicted are
+outside the lower bound and inside the upper, and the disagreements are named
+under it. Thresholds are judged on the lower bound, because a guard that passes
+on an uncertain match guards less than it claims.
+
+**Do not collapse the range to one number.** Rejecting class mismatches outright
+throws away CWE-120/121 and every other near-equivalent; accepting them silently
+is how CWE-306 got counted as CWE-208. Nothing here can tell the two apart
+without asserting a taxonomy this corpus has no business asserting, so it states
+both bounds and names what separates them.
+
+## One flaw in the corpus was not planted
+
+`kv-store` carries an unchecked `strdup` whose result a later `strcmp`
+dereferences. Nobody put it there; a scan reported it, and because the corpus had
+no entry it counted against the tool as a false positive every run.
+
+It is recorded now, with `found_not_planted` and a note saying why it was
+believed — checked against the C rather than taken on the scanner's word. **A
+corpus that quietly absorbs whatever a scanner reports stops being ground
+truth**, so the provenance is part of the record and a reader can discount it.
 
 The real findings document from that run is checked in as a fixture, and
 removing the class pass makes those tests fail — checked by removing it.

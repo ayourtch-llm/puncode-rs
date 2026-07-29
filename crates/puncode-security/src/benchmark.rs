@@ -50,6 +50,15 @@ pub struct PlantedFlaw {
     pub severity: Option<String>,
     #[serde(default)]
     pub summary: Option<String>,
+    /// Whether this was found by a scan rather than deliberately planted.
+    ///
+    /// Recorded rather than smoothed over. A corpus that quietly absorbs
+    /// whatever a scanner reports stops being ground truth, so a flaw that
+    /// arrived that way says so and carries why it was believed.
+    #[serde(default)]
+    pub found_not_planted: bool,
+    #[serde(default)]
+    pub why: Option<String>,
 }
 
 /// Code written to resemble something unsafe while being safe.
@@ -225,6 +234,19 @@ impl FlawOutcome {
     #[must_use]
     pub fn deferred(&self) -> bool {
         self.deferred_as.is_some()
+    }
+
+    /// Whether this was credited to a finding the scan classified differently.
+    ///
+    /// Only when both sides named a class. A scan that names none has not
+    /// disagreed about anything.
+    #[must_use]
+    pub fn class_contradicted(&self) -> bool {
+        self.matched_by == Some(MatchedBy::Location)
+            && match (self.cwe.as_deref(), self.reported_cwe.as_deref()) {
+                (Some(expected), Some(reported)) => !expected.eq_ignore_ascii_case(reported),
+                _ => false,
+            }
     }
 
     /// Whether the scan gave no sign of having seen this at all.
@@ -860,13 +882,45 @@ impl BenchmarkReport {
             .sum()
     }
 
+    /// Flaws matched by a finding that did not contradict their class.
+    ///
+    /// The number the rate is built from. A match where both sides named a
+    /// class and the classes differ is left out, because one of those turned
+    /// out to be a different weakness at the same line: a timing-unsafe
+    /// comparison planted as CWE-208, reported as CWE-306 for putting the token
+    /// in a query string. Both are real; only one is the planted flaw, and
+    /// counting it as a hit made a 9-of-10 run read as 10 of 10.
+    #[must_use]
+    pub fn confirmed(&self) -> usize {
+        self.scores
+            .iter()
+            .flat_map(|score| &score.outcomes)
+            .filter(|outcome| outcome.found() && !outcome.class_contradicted())
+            .count()
+    }
+
     /// The share of planted flaws that were found, in `0.0..=1.0`.
+    ///
+    /// Counts only matches whose class was not contradicted — see
+    /// [`BenchmarkReport::confirmed`]. The looser number, which counts every
+    /// location match, is [`BenchmarkReport::detection_rate_upper`]; where the
+    /// two differ the difference is named rather than averaged away.
     ///
     /// `None` when the corpus plants nothing, because a rate over no
     /// opportunities is not zero — it is undefined, and reporting it as zero
     /// would look like total failure.
     #[must_use]
     pub fn detection_rate(&self) -> Option<f64> {
+        self.rate_of(self.confirmed())
+    }
+
+    /// The same rate if every location match is the flaw it was credited to.
+    #[must_use]
+    pub fn detection_rate_upper(&self) -> Option<f64> {
+        self.rate_of(self.found())
+    }
+
+    fn rate_of(&self, found: usize) -> Option<f64> {
         let planted = self.planted();
         if planted == 0 {
             return None;
@@ -875,7 +929,7 @@ impl BenchmarkReport {
             clippy::cast_precision_loss,
             reason = "corpus sizes are far below the precision limit"
         )]
-        Some(self.found() as f64 / planted as f64)
+        Some(found as f64 / planted as f64)
     }
 
     /// Detection broken down by CWE, as (found, planted).
@@ -892,7 +946,10 @@ impl BenchmarkReport {
                 .unwrap_or_else(|| "unclassified".to_owned());
             let entry = totals.entry(key).or_insert((0, 0));
             entry.1 += 1;
-            if outcome.found() {
+            // Contradicted matches are excluded here too: the whole point of a
+            // per-class breakdown is to say which weaknesses a scanner finds,
+            // and crediting CWE-208 for a CWE-306 finding answers the opposite.
+            if outcome.found() && !outcome.class_contradicted() {
                 entry.0 += 1;
             }
         }
@@ -1060,6 +1117,8 @@ mod tests {
     fn flaw(id: &str, file: &str, first: u32, last: u32, cwe: &str) -> PlantedFlaw {
         PlantedFlaw {
             id: id.to_owned(),
+            found_not_planted: false,
+            why: None,
             file: file.to_owned(),
             lines: (first, last),
             cwe: Some(cwe.to_owned()),
@@ -1605,6 +1664,8 @@ mod severity_tests {
     fn flaw_with(severity: &str) -> PlantedFlaw {
         PlantedFlaw {
             id: "a".to_owned(),
+            found_not_planted: false,
+            why: None,
             file: "src/app.py".to_owned(),
             lines: (10, 10),
             cwe: Some("CWE-89".to_owned()),
@@ -1815,6 +1876,8 @@ mod deferral_tests {
     fn flaw(id: &str, file: &str, first: u32, last: u32) -> PlantedFlaw {
         PlantedFlaw {
             id: id.to_owned(),
+            found_not_planted: false,
+            why: None,
             file: file.to_owned(),
             lines: (first, last),
             cwe: None,
@@ -2295,18 +2358,34 @@ mod real_matching_tests {
         }
     }
 
-    /// The finding nothing planted accounts for stays unmatched, rather than
-    /// being absorbed by a flaw it says nothing about.
+    /// The finding the corpus had no entry for was counted against the tool as
+    /// a false positive until the flaw was checked and recorded. It is a real
+    /// NULL dereference, it is in the corpus now, and it accounts for itself.
     #[test]
-    fn the_unplanted_finding_is_still_unmatched() {
+    fn the_unplanted_flaw_accounts_for_its_own_finding() {
         let score = score_fixture(&kv_store(), &real_findings());
 
-        assert_eq!(score.unmatched.len(), 1, "{:?}", score.unmatched);
+        assert!(score.unmatched.is_empty(), "{:?}", score.unmatched);
+        let outcome = score
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.flaw_id == "unchecked-strdup")
+            .expect("the recorded flaw");
         assert!(
-            score.unmatched[0].contains("strdup"),
-            "{:?}",
-            score.unmatched
+            outcome
+                .found_as
+                .as_deref()
+                .is_some_and(|title| title.contains("strdup")),
+            "{outcome:?}"
         );
+        // And it says how it got into the corpus, so nobody reads it as planted.
+        let flaw = kv_store()
+            .flaws
+            .into_iter()
+            .find(|flaw| flaw.id == "unchecked-strdup")
+            .expect("the recorded flaw");
+        assert!(flaw.found_not_planted);
+        assert!(flaw.why.is_some());
     }
 
     /// Location-only matching still works when the classes are simply absent,
@@ -2320,12 +2399,24 @@ mod real_matching_tests {
 
         let score = score_fixture(&kv_store(), &findings);
 
-        assert_eq!(score.found(), 3);
+        // Everything that matched did so on location, and nothing was credited
+        // by a class nobody stated.
+        assert!(score.found() >= 3, "{score:?}");
         assert!(
             score
                 .outcomes
                 .iter()
+                .filter(|outcome| outcome.found())
                 .all(|outcome| outcome.matched_by == Some(MatchedBy::Location))
+        );
+        // None is contradicted either: there is nothing to contradict when the
+        // scan named no class, so the confirmed count is the whole of it.
+        assert_eq!(
+            BenchmarkReport {
+                scores: vec![score.clone()]
+            }
+            .confirmed(),
+            score.found()
         );
     }
 
@@ -2339,6 +2430,8 @@ mod real_matching_tests {
             language: None,
             flaws: vec![PlantedFlaw {
                 id: "planted".to_owned(),
+                found_not_planted: false,
+                why: None,
                 file: "a.c".to_owned(),
                 lines: (10, 10),
                 cwe: Some("CWE-193".to_owned()),
@@ -2367,5 +2460,120 @@ mod real_matching_tests {
             report.class_disagreements(),
             vec![("planted", "CWE-193", "CWE-476")]
         );
+    }
+}
+
+#[cfg(test)]
+mod confirmed_rate_tests {
+    use super::*;
+
+    fn outcome(id: &str, planted: &str, reported: Option<&str>, how: MatchedBy) -> FlawOutcome {
+        FlawOutcome {
+            flaw_id: id.to_owned(),
+            cwe: Some(planted.to_owned()),
+            found_as: Some("a finding".to_owned()),
+            expected_severity: None,
+            reported_severity: None,
+            reported_cwe: reported.map(str::to_owned),
+            matched_by: Some(how),
+            deferred_as: None,
+        }
+    }
+
+    fn report(outcomes: Vec<FlawOutcome>) -> BenchmarkReport {
+        BenchmarkReport {
+            scores: vec![FixtureScore {
+                fixture: "f".to_owned(),
+                control: false,
+                outcomes,
+                unmatched: Vec::new(),
+                decoys_tripped: Vec::new(),
+                unattributed_deferrals: Vec::new(),
+                decoys_deferred: Vec::new(),
+            }],
+        }
+    }
+
+    /// The real case. A timing-unsafe comparison planted as CWE-208, credited
+    /// to a finding the scan called CWE-306 — a different weakness at the same
+    /// line, and a hit that turned 9 of 10 into 10 of 10.
+    #[test]
+    fn a_contradicted_class_does_not_count_toward_the_rate() {
+        let report = report(vec![
+            outcome("path-traversal", "CWE-22", Some("CWE-22"), MatchedBy::Class),
+            outcome(
+                "timing-unsafe-compare",
+                "CWE-208",
+                Some("CWE-306"),
+                MatchedBy::Location,
+            ),
+        ]);
+
+        assert_eq!(report.found(), 2);
+        assert_eq!(report.confirmed(), 1);
+        assert_eq!(report.detection_rate(), Some(0.5));
+        assert_eq!(report.detection_rate_upper(), Some(1.0));
+    }
+
+    /// And it must not be counted under the class it was not.
+    #[test]
+    fn a_contradicted_class_is_not_credited_in_the_breakdown() {
+        let report = report(vec![outcome(
+            "timing-unsafe-compare",
+            "CWE-208",
+            Some("CWE-306"),
+            MatchedBy::Location,
+        )]);
+
+        assert_eq!(report.by_cwe()["CWE-208"], (0, 1));
+    }
+
+    /// A scan that names no class has not disagreed about anything, and
+    /// penalising it would measure whether the scan fills in a taxonomy field.
+    #[test]
+    fn a_match_with_no_class_stated_still_counts() {
+        for reported in [None, Some("CWE-22")] {
+            let report = report(vec![outcome(
+                "path-traversal",
+                "CWE-22",
+                reported,
+                MatchedBy::Location,
+            )]);
+
+            assert_eq!(report.confirmed(), 1, "{reported:?}");
+            assert_eq!(report.detection_rate(), Some(1.0), "{reported:?}");
+        }
+    }
+
+    /// The two rates are equal when nothing is in doubt, so the band only
+    /// appears when there is something to say.
+    #[test]
+    fn the_two_rates_agree_when_no_class_is_contradicted() {
+        let report = report(vec![outcome(
+            "path-traversal",
+            "CWE-22",
+            Some("CWE-22"),
+            MatchedBy::Class,
+        )]);
+
+        assert_eq!(report.detection_rate(), report.detection_rate_upper());
+    }
+
+    /// A threshold must be checked against the number that is not in doubt.
+    /// Passing on an uncertain match is a guard guarding less than it claims.
+    #[test]
+    fn a_threshold_is_judged_on_the_confirmed_rate() {
+        let report = report(vec![
+            outcome("a", "CWE-22", Some("CWE-22"), MatchedBy::Class),
+            outcome("b", "CWE-208", Some("CWE-306"), MatchedBy::Location),
+        ]);
+
+        let shortfalls = report.shortfalls(&Thresholds {
+            min_detection: Some(0.9),
+            max_false_positives: None,
+        });
+
+        assert_eq!(shortfalls.len(), 1, "{shortfalls:?}");
+        assert!(shortfalls[0].describe().contains("50%"), "{shortfalls:?}");
     }
 }

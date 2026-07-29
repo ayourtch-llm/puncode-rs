@@ -197,6 +197,11 @@ pub fn render_json(outcome: &Report, shortfalls: &[Shortfall]) -> String {
         // Absent rather than zero when nothing was planted: an undefined rate
         // and a rate of zero are different facts.
         "detectionRate": report.detection_rate(),
+        // The looser reading, kept beside the strict one rather than instead
+        // of it: a machine deciding whether a run regressed should be able to
+        // see how much of the number is in doubt.
+        "detectionRateUpper": report.detection_rate_upper(),
+        "confirmed": report.confirmed(),
         "planted": report.planted(),
         "found": report.found(),
         "falsePositives": report.false_positives(),
@@ -420,15 +425,42 @@ pub fn render(outcome: &Report) -> String {
     }
 
     lines.push(String::new());
-    match report.detection_rate() {
-        Some(rate) => lines.push(format!(
+    match (report.detection_rate(), report.detection_rate_upper()) {
+        // A range, not a point, whenever some matches rest on location alone
+        // against a class the scan itself named differently. Picking either
+        // bound silently would state more confidence than the corpus has: most
+        // of those disagreements are a neighbouring name for the same flaw
+        // (CWE-121 against CWE-120), and one was a different weakness at the
+        // same line (CWE-208 against CWE-306). Nothing here can tell which
+        // without a taxonomy this corpus has no business asserting.
+        (Some(lower), Some(upper)) if report.found() > report.confirmed() => {
+            lines.push(format!(
+                "  detection      {} to {} of {}  ({:.0}%–{:.0}%)",
+                report.confirmed(),
+                report.found(),
+                report.planted(),
+                lower * 100.0,
+                upper * 100.0,
+            ));
+            lines.push(format!(
+                "                 {} rest on location alone, against a class the scan named \
+                 differently:",
+                report.found() - report.confirmed()
+            ));
+            for (id, expected, reported) in report.class_disagreements() {
+                lines.push(format!(
+                    "                 {id}: corpus {expected}, scan {reported}"
+                ));
+            }
+        }
+        (Some(rate), _) => lines.push(format!(
             "  detection      {:.0}%  ({} of {})",
             rate * 100.0,
-            report.found(),
+            report.confirmed(),
             report.planted()
         )),
         // Not zero: a rate over no opportunities is undefined.
-        None => lines.push("  detection      not measured — nothing was planted".to_owned()),
+        (None, _) => lines.push("  detection      not measured — nothing was planted".to_owned()),
     }
     lines.push(format!(
         "  unmatched      {}  ({} on fixtures with nothing planted)",
@@ -461,22 +493,6 @@ pub fn render(outcome: &Report) -> String {
             "  severity       {agreed} of {comparable} rated as the corpus does"
         ));
         for (id, expected, reported) in report.severity_disagreements() {
-            lines.push(format!(
-                "                 {id}: corpus {expected}, scan {reported}"
-            ));
-        }
-    }
-
-    // Said next to the number it produced. A flaw credited to a finding the
-    // scan classified differently is a match resting on proximity alone, and
-    // model line numbers have been wrong enough here to make that worth seeing.
-    let classes = report.class_disagreements();
-    if !classes.is_empty() {
-        lines.push(format!(
-            "  class          {} matched by location alone, with a different class",
-            classes.len()
-        ));
-        for (id, expected, reported) in classes {
             lines.push(format!(
                 "                 {id}: corpus {expected}, scan {reported}"
             ));

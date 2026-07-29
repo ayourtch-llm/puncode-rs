@@ -350,20 +350,27 @@ model's line numbers were up to fifteen lines out, and matching by proximity
 alone credited the use-after-free to the off-by-one's finding and the off-by-one
 to the use-after-free's. Two wrong assignments, one perfect score.
 
-A match resting on location alone, where both sides named a class and the classes
-differ, is reported rather than rejected:
+When a match rests on location alone against a class the scan named differently,
+**the rate is reported as a range** rather than a number:
 
 ```
-  class          2 matched by location alone, with a different class
+  detection      8 to 10 of 10  (80%–100%)
+                 2 rest on location alone, against a class the scan named differently:
                  stack-overflow: corpus CWE-121, scan CWE-120
                  timing-unsafe-compare: corpus CWE-208, scan CWE-306
 ```
 
-The first is the same flaw under a neighbouring name. The second is not: the
-model found something at that line and called it missing authentication, and the
-detection rate had been counting it as a hit for the timing-unsafe comparison.
+The first is the same flaw under a neighbouring name. The second is not — the
+model found something real at that line (the token travels in a query string)
+and it is not the timing-unsafe comparison. Counting it turned a 9-of-10 run
+into 10 of 10, and reading every run back through this showed the timing flaw
+has been genuinely detected **once in five runs**, not three times.
+
 Rejecting class mismatches outright would throw away the first to catch the
-second, so it reports both and lets the reader decide.
+second, and nothing here can tell them apart without asserting a taxonomy this
+corpus has no business asserting. So both bounds are stated, what separates them
+is named, and thresholds are judged on the lower one — a guard that passes on an
+uncertain match guards less than it claims.
 
 ### The corpus audits itself
 

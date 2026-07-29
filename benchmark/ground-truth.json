@@ -67,6 +67,19 @@
           "cwe": "CWE-193",
           "severity": "medium",
           "summary": "bound uses > so index MAX_RECORDS is admitted, one past the last slot"
+        },
+        {
+          "id": "unchecked-strdup",
+          "file": "src/store.c",
+          "lines": [
+            57,
+            58
+          ],
+          "cwe": "CWE-476",
+          "severity": "low",
+          "summary": "strdup return stored without a NULL check, dereferenced by a later lookup",
+          "found_not_planted": true,
+          "why": "Not planted. A scan reported it and the corpus had no entry for it, so it counted against the tool as a false positive for as long as it went unrecorded. Checked independently rather than taken on the scanner's word: strdup returns NULL on allocation failure, the result is stored unchecked, and lookup_record then passes it to strcmp. Recorded here with its provenance because a corpus that quietly absorbs whatever a scanner reports stops being ground truth."
         }
       ]
     },
