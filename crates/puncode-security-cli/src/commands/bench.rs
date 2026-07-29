@@ -12,6 +12,7 @@ use puncode_security::benchmark::{
     Thresholds, compare, deferrals_from_coverage, score_fixture_with_deferrals,
 };
 use puncode_security::corpus_audit::{Leak, audit_fixture, describe as describe_leak};
+use puncode_security::provenance::RunProvenance;
 use serde_json::Value;
 
 /// Scores every fixture that has a scan directory under `results`.
@@ -27,6 +28,7 @@ pub fn run(ground_truth: &Path, results: &Path, corpus_root: &Path) -> Result<Re
     let mut scores = Vec::new();
     let mut unscanned = Vec::new();
     let mut leaks = Vec::new();
+    let mut scanned: Vec<std::path::PathBuf> = Vec::new();
 
     for fixture in &corpus.fixtures {
         // Audited whether or not it was scanned. A corpus that gives its
@@ -40,6 +42,7 @@ pub fn run(ground_truth: &Path, results: &Path, corpus_root: &Path) -> Result<Re
             unscanned.push(fixture.name.clone());
             continue;
         };
+        scanned.push(results.join(&fixture.name));
         let findings = parse_findings(&body, corpus_root, &fixture.path)?;
         // Absent is ordinary: a scan made by another tool has no coverage
         // document, and one that is unreadable is not a reason to refuse to
@@ -56,6 +59,7 @@ pub fn run(ground_truth: &Path, results: &Path, corpus_root: &Path) -> Result<Re
         report: BenchmarkReport { scores },
         unscanned,
         leaks,
+        provenance: RunProvenance::collect(scanned.iter().map(std::path::PathBuf::as_path)),
     })
 }
 
@@ -70,6 +74,11 @@ pub struct Report {
     /// gives its answers away is not a detection rate, and it looks exactly
     /// like one.
     pub leaks: Vec<Leak>,
+    /// How this run was produced, read from what its scans recorded.
+    ///
+    /// Only meaningful against another run: a comparison that does not know
+    /// whether the model changed will report a model change as a regression.
+    pub provenance: RunProvenance,
 }
 
 /// Pulls the locations out of a findings document.
@@ -242,25 +251,43 @@ pub fn shortfalls(
     })
 }
 
-/// What changed between an earlier run and this one.
+/// What changed between an earlier run and this one, and whether the two are
+/// comparable at all.
 pub fn against_baseline(
     ground_truth: &Path,
     baseline: &Path,
     current: &Report,
     corpus_root: &Path,
-) -> Result<Comparison, String> {
+) -> Result<(Comparison, Vec<String>), String> {
     let earlier = run(ground_truth, baseline, corpus_root)?;
-    Ok(compare(&earlier.report, &current.report))
+    Ok((
+        compare(&earlier.report, &current.report),
+        earlier.provenance.differences(&current.provenance),
+    ))
 }
 
 /// The comparison, for a person.
 #[must_use]
-pub fn render_comparison(comparison: &Comparison) -> String {
+pub fn render_comparison(comparison: &Comparison, produced_differently: &[String]) -> String {
     let mut lines = vec![
         String::new(),
         "Against the baseline".to_owned(),
         String::new(),
     ];
+
+    // Before the diff, because it decides how to read every line of it. A flaw
+    // that stops being found across a model change is not a regression, and
+    // "LOST" below would say otherwise.
+    if !produced_differently.is_empty() {
+        lines.push("  The two runs were not produced the same way:".to_owned());
+        for difference in produced_differently {
+            lines.push(format!("    {difference}"));
+        }
+        lines.push(
+            "  Anything below may be that difference rather than a change in the code.".to_owned(),
+        );
+        lines.push(String::new());
+    }
 
     if comparison.newly_missed.is_empty()
         && comparison.newly_found.is_empty()
@@ -563,6 +590,7 @@ mod tests {
             report: BenchmarkReport { scores: Vec::new() },
             unscanned: Vec::new(),
             leaks: Vec::new(),
+            provenance: RunProvenance::default(),
         };
 
         let rendered = render(&outcome);
@@ -703,6 +731,7 @@ mod corpus_audit_tests {
                 phrase: "use after free".to_owned(),
                 text: "/* Use after free: the record is released ... */".to_owned(),
             }],
+            provenance: RunProvenance::default(),
         };
 
         let rendered = render(&outcome);
@@ -723,6 +752,7 @@ mod corpus_audit_tests {
             report: BenchmarkReport { scores: Vec::new() },
             unscanned: Vec::new(),
             leaks: Vec::new(),
+            provenance: RunProvenance::default(),
         };
 
         assert!(!render(&outcome).contains("ANSWERS AWAY"));
@@ -778,11 +808,79 @@ mod corpus_audit_tests {
                 phrase: "sql injection".to_owned(),
                 text: "# sql injection below".to_owned(),
             }],
+            provenance: RunProvenance::default(),
         };
 
         let structured = render_json(&outcome, &[]);
 
         assert!(structured.contains("corpusLeaks"), "{structured}");
         assert!(structured.contains("sql injection"), "{structured}");
+    }
+
+    /// A model change reads as a regression unless something says otherwise,
+    /// and until now nothing did.
+    #[test]
+    fn a_comparison_says_when_the_runs_were_produced_differently() {
+        let comparison = Comparison {
+            newly_missed: vec!["sqli-user".to_owned()],
+            ..Comparison::default()
+        };
+
+        let rendered = render_comparison(&comparison, &["model: m1 then, m2 now".to_owned()]);
+
+        let warning = rendered
+            .find("not produced the same way")
+            .expect("the warning");
+        let lost = rendered.find("LOST").expect("the diff");
+        assert!(warning < lost, "{rendered}");
+        assert!(rendered.contains("m1 then, m2 now"), "{rendered}");
+        assert!(rendered.contains("may be that difference"), "{rendered}");
+    }
+
+    /// And says nothing when there is nothing to say.
+    #[test]
+    fn a_comparison_of_matching_runs_is_not_qualified() {
+        let rendered = render_comparison(&Comparison::default(), &[]);
+
+        assert!(
+            !rendered.contains("not produced the same way"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("nothing changed"), "{rendered}");
+    }
+
+    /// The provenance is read from the scans that were actually scored, not
+    /// from every directory that happens to be under the results path.
+    #[test]
+    fn a_run_reads_provenance_from_the_scans_it_scored() {
+        let results = tempfile::tempdir().expect("a directory");
+        let fixture = results.path().join("orders-api");
+        std::fs::create_dir_all(&fixture).expect("creates");
+        std::fs::write(
+            fixture.join("findings.json"),
+            serde_json::json!({ "findings": [] }).to_string(),
+        )
+        .expect("writes");
+        puncode_security::provenance::Provenance {
+            tool: "puncode-security".to_owned(),
+            tool_version: "0.1.0".to_owned(),
+            model: Some("a-model".to_owned()),
+            ..puncode_security::provenance::Provenance::default()
+        }
+        .write(&fixture)
+        .expect("writes provenance");
+        // A directory with no scan in it must not contribute.
+        std::fs::create_dir_all(results.path().join("stray")).expect("creates");
+
+        let outcome = run(
+            &corpus_dir().join("benchmark/ground-truth.json"),
+            results.path(),
+            &corpus_dir(),
+        )
+        .expect("runs");
+
+        assert_eq!(outcome.provenance.models.len(), 1);
+        assert!(outcome.provenance.models.contains("a-model"));
+        assert_eq!(outcome.provenance.unrecorded, 0);
     }
 }

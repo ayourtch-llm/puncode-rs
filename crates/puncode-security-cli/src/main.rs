@@ -378,7 +378,7 @@ fn bench(options: &cli::BenchArgs) -> std::process::ExitCode {
             &outcome,
             &options.corpus_root,
         ) {
-            Ok(comparison) => Some(comparison),
+            Ok(pair) => Some(pair),
             Err(problem) => {
                 eprintln!("puncode-security: could not read the baseline: {problem}");
                 return std::process::ExitCode::from(exit::ERROR);
@@ -391,13 +391,28 @@ fn bench(options: &cli::BenchArgs) -> std::process::ExitCode {
         println!("{}", commands::bench::render_json(&outcome, &shortfalls));
     } else {
         println!("{}", commands::bench::render(&outcome));
-        if let Some(comparison) = &comparison {
-            println!("{}", commands::bench::render_comparison(comparison));
+        if let Some((comparison, produced_differently)) = &comparison {
+            println!(
+                "{}",
+                commands::bench::render_comparison(comparison, produced_differently)
+            );
         }
     }
 
-    if comparison.is_some_and(|comparison| comparison.regressed()) {
-        eprintln!("puncode-security: something that used to be found is no longer found.");
+    if let Some((comparison, produced_differently)) = &comparison
+        && comparison.regressed()
+    {
+        // Still a failure — a job watching for this should stop either way —
+        // but the reason it may not mean what it looks like goes on the same
+        // line as the alarm, not somewhere above it.
+        if produced_differently.is_empty() {
+            eprintln!("puncode-security: something that used to be found is no longer found.");
+        } else {
+            eprintln!(
+                "puncode-security: something that used to be found is no longer found, but the \
+                 two runs were not produced the same way, so this may be that difference."
+            );
+        }
         return std::process::ExitCode::from(exit::FINDINGS);
     }
 

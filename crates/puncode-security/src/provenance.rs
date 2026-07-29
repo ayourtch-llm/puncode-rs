@@ -389,3 +389,256 @@ mod endpoint_tests {
         assert!(!Endpoint::new("http://host/v1").carries_credentials());
     }
 }
+
+/// How a whole run was produced, across every scan in it.
+///
+/// Two runs of a corpus are only worth comparing if they were produced the same
+/// way. `bench --baseline` names what moved between them, and a flaw that stops
+/// being found reads as a regression — but swap the model, the endpoint or the
+/// plugin and the same output means nothing of the sort. The scans record all
+/// of it and nothing was reading it.
+///
+/// Sets rather than single values: a run is several scans, and they are only
+/// supposed to have been produced identically. When they were not, that is
+/// itself worth seeing.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunProvenance {
+    pub models: std::collections::BTreeSet<String>,
+    pub endpoints: std::collections::BTreeSet<String>,
+    pub tool_versions: std::collections::BTreeSet<String>,
+    pub plugin_digests: std::collections::BTreeSet<String>,
+    /// Whether any scan in the run ran without a sandbox.
+    pub sandbox_disabled: bool,
+    /// Scans that left no record at all.
+    pub unrecorded: usize,
+}
+
+/// What an absent endpoint means, said rather than left blank.
+const HOSTED: &str = "hosted Codex";
+
+impl RunProvenance {
+    /// Reads what every scan in a run recorded about itself.
+    #[must_use]
+    pub fn collect<'a>(scan_dirs: impl IntoIterator<Item = &'a Path>) -> Self {
+        let mut run = Self::default();
+        for scan_dir in scan_dirs {
+            let Ok(record) = Provenance::read(scan_dir) else {
+                // Counted, not skipped. A comparison resting on records that
+                // are not there should say how much it could not see.
+                run.unrecorded += 1;
+                continue;
+            };
+            if let Some(model) = record.model {
+                run.models.insert(model);
+            }
+            run.endpoints
+                .insert(record.endpoint.unwrap_or_else(|| HOSTED.to_owned()));
+            run.tool_versions
+                .insert(format!("{} {}", record.tool, record.tool_version));
+            if let Some(digest) = record.plugin_digest {
+                run.plugin_digests.insert(digest);
+            }
+            run.sandbox_disabled |= record.sandbox_disabled;
+        }
+        run
+    }
+
+    /// Whether nothing at all is known about how this run was produced.
+    #[must_use]
+    pub fn is_unknown(&self) -> bool {
+        self.models.is_empty()
+            && self.endpoints.is_empty()
+            && self.tool_versions.is_empty()
+            && self.plugin_digests.is_empty()
+    }
+
+    /// Every way two runs were produced differently.
+    ///
+    /// Phrased as facts rather than as a verdict. A different model is not a
+    /// mistake; it just means a flaw that stopped being found says nothing
+    /// about the code.
+    #[must_use]
+    pub fn differences(&self, other: &Self) -> Vec<String> {
+        let mut found = Vec::new();
+        for (label, before, after) in [
+            ("model", &self.models, &other.models),
+            ("endpoint", &self.endpoints, &other.endpoints),
+            ("tool", &self.tool_versions, &other.tool_versions),
+        ] {
+            if before != after {
+                found.push(format!(
+                    "{label}: {} then, {} now",
+                    describe_set(before),
+                    describe_set(after)
+                ));
+            }
+        }
+        // Digests are long and saying them twice helps nobody; that they differ
+        // is the whole content.
+        if self.plugin_digests != other.plugin_digests {
+            found.push(
+                "plugin: a different tree, so the two runs did not execute the same code"
+                    .to_owned(),
+            );
+        }
+        if self.sandbox_disabled != other.sandbox_disabled {
+            found.push(format!(
+                "sandbox: {} then, {} now",
+                if self.sandbox_disabled { "off" } else { "on" },
+                if other.sandbox_disabled { "off" } else { "on" }
+            ));
+        }
+        for (label, count) in [("earlier", self.unrecorded), ("this", other.unrecorded)] {
+            if count > 0 {
+                found.push(format!(
+                    "{count} scan(s) in the {label} run left no record, so this comparison cannot \
+                     see how they were produced"
+                ));
+            }
+        }
+        found
+    }
+}
+
+/// A set of values, for a person.
+fn describe_set(values: &std::collections::BTreeSet<String>) -> String {
+    if values.is_empty() {
+        return "not recorded".to_owned();
+    }
+    values
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+#[cfg(test)]
+mod run_provenance_tests {
+    use super::*;
+
+    fn scan(directory: &Path, name: &str, record: &Provenance) -> std::path::PathBuf {
+        let path = directory.join(name);
+        std::fs::create_dir_all(&path).expect("creates");
+        record.write(&path).expect("writes");
+        path
+    }
+
+    fn record(model: &str) -> Provenance {
+        Provenance {
+            tool: "puncode-security".to_owned(),
+            tool_version: "0.1.0".to_owned(),
+            plugin_version: "0.1.14".to_owned(),
+            plugin_digest: Some("abc".to_owned()),
+            model: Some(model.to_owned()),
+            endpoint: Some("http://host/v1".to_owned()),
+            sandbox_disabled: true,
+            mode: "repository".to_owned(),
+            ..Provenance::default()
+        }
+    }
+
+    #[test]
+    fn reads_what_a_run_recorded_about_itself() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let first = scan(directory.path(), "a", &record("m1"));
+        let second = scan(directory.path(), "b", &record("m1"));
+
+        let run = RunProvenance::collect([first.as_path(), second.as_path()]);
+
+        assert_eq!(run.models.len(), 1);
+        assert!(run.sandbox_disabled);
+        assert_eq!(run.unrecorded, 0);
+        assert!(!run.is_unknown());
+    }
+
+    /// The reason this exists: a flaw that stops being found across a model
+    /// change is not a regression, and nothing was saying so.
+    #[test]
+    fn names_a_change_of_model() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let before = RunProvenance::collect([scan(directory.path(), "a", &record("m1")).as_path()]);
+        let after = RunProvenance::collect([scan(directory.path(), "b", &record("m2")).as_path()]);
+
+        let differences = before.differences(&after);
+
+        assert_eq!(differences, vec!["model: m1 then, m2 now"]);
+    }
+
+    #[test]
+    fn says_nothing_when_two_runs_match() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let before = RunProvenance::collect([scan(directory.path(), "a", &record("m")).as_path()]);
+        let after = RunProvenance::collect([scan(directory.path(), "b", &record("m")).as_path()]);
+
+        assert_eq!(before.differences(&after), Vec::<String>::new());
+    }
+
+    /// A hosted run and a local one are not the same run, and an absent
+    /// endpoint must not read as "same as the other one".
+    #[test]
+    fn a_hosted_run_differs_from_a_local_one() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let mut hosted = record("m");
+        hosted.endpoint = None;
+        let before = RunProvenance::collect([scan(directory.path(), "a", &hosted).as_path()]);
+        let after = RunProvenance::collect([scan(directory.path(), "b", &record("m")).as_path()]);
+
+        let differences = before.differences(&after);
+
+        assert_eq!(differences.len(), 1, "{differences:?}");
+        assert!(differences[0].contains(HOSTED), "{differences:?}");
+    }
+
+    #[test]
+    fn names_a_different_plugin_tree() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let mut other = record("m");
+        other.plugin_digest = Some("def".to_owned());
+        let before = RunProvenance::collect([scan(directory.path(), "a", &record("m")).as_path()]);
+        let after = RunProvenance::collect([scan(directory.path(), "b", &other).as_path()]);
+
+        let differences = before.differences(&after);
+
+        assert!(
+            differences[0].contains("did not execute the same code"),
+            "{differences:?}"
+        );
+        // The digest itself says nothing to a reader and is not repeated.
+        assert!(!differences[0].contains("abc"), "{differences:?}");
+    }
+
+    /// A run whose scans disagree with each other is worth seeing too.
+    #[test]
+    fn a_run_that_used_two_models_reports_both() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let mixed = RunProvenance::collect([
+            scan(directory.path(), "a", &record("m1")).as_path(),
+            scan(directory.path(), "b", &record("m2")).as_path(),
+        ]);
+        let single = RunProvenance::collect([scan(directory.path(), "c", &record("m1")).as_path()]);
+
+        let differences = mixed.differences(&single);
+
+        assert!(differences[0].contains("m1, m2 then"), "{differences:?}");
+    }
+
+    /// Missing records are counted rather than quietly treated as matching.
+    #[test]
+    fn counts_scans_that_left_no_record() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let empty = directory.path().join("nothing");
+        std::fs::create_dir_all(&empty).expect("creates");
+
+        let run = RunProvenance::collect([empty.as_path()]);
+
+        assert_eq!(run.unrecorded, 1);
+        assert!(run.is_unknown());
+        let differences = RunProvenance::default().differences(&run);
+        assert!(
+            differences
+                .iter()
+                .any(|line| line.contains("left no record")),
+            "{differences:?}"
+        );
+    }
+}

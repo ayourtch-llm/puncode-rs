@@ -375,6 +375,32 @@ an injection attempt beside a flaw the model otherwise finds every time
 (orders-api's two are the obvious baseline). Worth doing — until then, no
 claim is made either way.
 
+## A baseline comparison that does not know what changed
+
+`bench --baseline` names what moved between two runs, and a flaw that stops
+being found reads as `LOST`. Swap the model, the endpoint, or the plugin and it
+means nothing of the sort. The scans record all of that in `provenance.json` and
+nothing was reading it.
+
+`RunProvenance::collect` reads it now and `render_comparison` prints the
+differences **above** the diff, because they decide how to read every line of
+it. The exit code still fails on a regression — a job watching for that should
+stop either way — but the reason it may not mean what it looks like is on the
+same line as the alarm.
+
+**Renaming a fixture makes every earlier run unscoreable.** `bench` looks for
+`<results>/<fixture-name>/findings.json`, so the 2026-07-29 rename left four
+runs on disk that scored nothing. It reported them as "Not scanned" rather than
+as zero detection, which is the right answer, and the fix is to rename the
+result directories to match — the scan output inside them is unchanged.
+
+That nearly cost more than it did. The first check of the provenance warning ran
+against exactly those runs, found no scans, compared two empty records, printed
+no warning, and looked like a clean pass. **The unit tests all passed, because
+they handed `render_comparison` a differences list directly and never exercised
+the wiring that produces one.** Verified properly by copying a real run and
+rewriting its provenance records.
+
 ## The ETXTBSY flake, and the rule for new suites
 
 Tests that write an executable stub and spawn it race on Linux. The suite runs
