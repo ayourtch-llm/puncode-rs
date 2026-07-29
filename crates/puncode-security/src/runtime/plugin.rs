@@ -10,6 +10,7 @@
 
 #![allow(dead_code)]
 
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -288,8 +289,29 @@ pub fn bundled_plugin_root() -> Result<PathBuf> {
     // the path, so upgrading never reads a stale tree.
     let root = plugin_cache_root()?.join(format!("plugin-{BUNDLED_PLUGIN_VERSION}"));
     let ready = root.join(".unpacked");
+    let expected = embedded_digest(&PLUGIN);
+
+    // The unpacked copy is on disk between commands, where anything with write
+    // access could change it — and its scripts are executed by every scan. The
+    // marker records what was written, so an altered tree is noticed rather
+    // than trusted for the life of the version.
     if ready.is_file() {
-        return validate_plugin_root(&root);
+        match std::fs::read_to_string(&ready) {
+            Ok(recorded) if recorded.trim() == expected && unpacked_digest(&root) == expected => {
+                return validate_plugin_root(&root);
+            }
+            _ => {
+                // Said out loud, not silently repaired: a tree that changed
+                // under us is worth knowing about even when replacing it fixes
+                // the immediate problem.
+                eprintln!(
+                    "puncode-security: the unpacked plugin at {} does not match what this build \
+                     ships; replacing it.",
+                    root.display()
+                );
+                let _ = std::fs::remove_dir_all(&root);
+            }
+        }
     }
 
     // Unpacked beside the destination and moved into place, so a command
@@ -303,7 +325,7 @@ pub fn bundled_plugin_root() -> Result<PathBuf> {
         Error::plugin_bootstrap("Unable to unpack the bundled Codex Security plugin")
             .with_source(error)
     })?;
-    std::fs::write(staging.join(".unpacked"), BUNDLED_PLUGIN_VERSION).map_err(|error| {
+    std::fs::write(staging.join(".unpacked"), &expected).map_err(|error| {
         Error::plugin_bootstrap("Unable to unpack the bundled Codex Security plugin")
             .with_source(error)
     })?;
@@ -323,6 +345,83 @@ pub fn bundled_plugin_root() -> Result<PathBuf> {
         }
     }
     validate_plugin_root(&root)
+}
+
+/// A digest of the plugin this build carries.
+///
+/// Over sorted path and contents together, so a file added, removed or edited
+/// all change the answer. Directories contribute only through their files.
+fn embedded_digest(dir: &include_dir::Dir<'_>) -> String {
+    let mut files: Vec<(String, &[u8])> = Vec::new();
+    collect_embedded(dir, &mut files);
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut digest = Sha256::new();
+    for (path, contents) in files {
+        digest.update(path.as_bytes());
+        digest.update([0]);
+        digest.update(contents);
+        digest.update([0]);
+    }
+    format!("{:x}", digest.finalize())
+}
+
+fn collect_embedded<'a>(dir: &include_dir::Dir<'a>, into: &mut Vec<(String, &'a [u8])>) {
+    for file in dir.files() {
+        into.push((file.path().to_string_lossy().into_owned(), file.contents()));
+    }
+    for child in dir.dirs() {
+        collect_embedded(child, into);
+    }
+}
+
+/// The same digest, computed over what is actually on disk.
+///
+/// Returns an empty string when the tree cannot be read, which never matches a
+/// real digest and so is treated as a mismatch.
+fn unpacked_digest(root: &Path) -> String {
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    if collect_unpacked(root, root, &mut files).is_err() {
+        return String::new();
+    }
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut digest = Sha256::new();
+    for (path, contents) in files {
+        digest.update(path.as_bytes());
+        digest.update([0]);
+        digest.update(&contents);
+        digest.update([0]);
+    }
+    format!("{:x}", digest.finalize())
+}
+
+fn collect_unpacked(
+    root: &Path,
+    directory: &Path,
+    into: &mut Vec<(String, Vec<u8>)>,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        let path = entry.path();
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            collect_unpacked(root, &path, into)?;
+        } else if kind.is_file() {
+            let relative = path.strip_prefix(root).unwrap_or(&path);
+            // The marker holds the digest, so it cannot be part of it.
+            if relative == Path::new(".unpacked") {
+                continue;
+            }
+            into.push((
+                relative.to_string_lossy().into_owned(),
+                std::fs::read(&path)?,
+            ));
+        }
+        // A symlink is neither: it is not what was written, so leaving it out
+        // makes the digest differ and the tree be replaced.
+    }
+    Ok(())
 }
 
 /// Where the unpacked plugin is kept between commands.
@@ -941,5 +1040,96 @@ mod resolution_tests {
             plugin_metadata(&root).expect("metadata").version,
             BUNDLED_PLUGIN_VERSION
         );
+    }
+}
+
+#[cfg(test)]
+mod integrity_tests {
+    use super::*;
+
+    /// Builds a small tree and returns its digest.
+    fn tree(files: &[(&str, &str)]) -> (tempfile::TempDir, String) {
+        let root = tempfile::tempdir().expect("a directory");
+        for (path, contents) in files {
+            let full = root.path().join(path);
+            std::fs::create_dir_all(full.parent().expect("a parent")).expect("creates");
+            std::fs::write(&full, contents).expect("writes");
+        }
+        let digest = unpacked_digest(root.path());
+        (root, digest)
+    }
+
+    #[test]
+    fn the_same_tree_digests_the_same_way() {
+        let (_a, first) = tree(&[("a.py", "one"), ("dir/b.py", "two")]);
+        let (_b, second) = tree(&[("a.py", "one"), ("dir/b.py", "two")]);
+
+        assert_eq!(first, second);
+        assert!(!first.is_empty());
+    }
+
+    /// The case that matters: a script the scan executes is altered.
+    #[test]
+    fn an_edited_file_changes_the_digest() {
+        let (_a, before) = tree(&[("scripts/run.py", "print(1)")]);
+        let (_b, after) = tree(&[("scripts/run.py", "print(1)\n# added")]);
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn an_added_file_changes_the_digest() {
+        let (_a, before) = tree(&[("a.py", "one")]);
+        let (_b, after) = tree(&[("a.py", "one"), ("extra.py", "")]);
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn a_removed_file_changes_the_digest() {
+        let (_a, before) = tree(&[("a.py", "one"), ("b.py", "two")]);
+        let (_b, after) = tree(&[("a.py", "one")]);
+
+        assert_ne!(before, after);
+    }
+
+    /// Content moved between files must not digest the same, or a rename could
+    /// hide a substitution.
+    #[test]
+    fn moving_content_between_files_changes_the_digest() {
+        let (_a, before) = tree(&[("a.py", "one"), ("b.py", "two")]);
+        let (_b, after) = tree(&[("a.py", "two"), ("b.py", "one")]);
+
+        assert_ne!(before, after);
+    }
+
+    /// The marker holds the digest, so including it would be circular.
+    #[test]
+    fn the_marker_is_not_part_of_what_it_records() {
+        let (root, without) = tree(&[("a.py", "one")]);
+        std::fs::write(root.path().join(".unpacked"), "some digest").expect("writes");
+
+        assert_eq!(unpacked_digest(root.path()), without);
+    }
+
+    /// A tree that cannot be read is not silently equal to anything.
+    #[test]
+    fn an_unreadable_tree_matches_nothing() {
+        let digest = unpacked_digest(Path::new("/does/not/exist"));
+
+        assert!(digest.is_empty());
+        assert_ne!(digest, tree(&[("a.py", "one")]).1);
+    }
+
+    /// What this build ships must match what it wrote to disk, or every command
+    /// would re-unpack.
+    #[test]
+    fn the_shipped_plugin_matches_what_it_unpacks() {
+        static PLUGIN: include_dir::Dir<'_> =
+            include_dir::include_dir!("$CARGO_MANIFEST_DIR/plugin");
+        let staging = tempfile::tempdir().expect("a directory");
+        PLUGIN.extract(staging.path()).expect("extracts");
+
+        assert_eq!(embedded_digest(&PLUGIN), unpacked_digest(staging.path()));
     }
 }

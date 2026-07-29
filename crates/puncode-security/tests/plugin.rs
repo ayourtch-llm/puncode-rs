@@ -57,14 +57,26 @@ fn reuses_what_it_already_unpacked() {
 }
 
 // A command interrupted midway must not leave a partial tree that a later
-// command trusts, which is what the completion marker is for.
+// command trusts, which is what the marker is for. It carries a digest of the
+// tree rather than a version, so it also answers whether the tree still holds
+// what was written — the scripts under it are executed by every scan.
 #[test]
 fn marks_the_tree_complete_only_when_it_is() {
     let root = bundled_plugin_root().expect("the bundled plugin is available");
 
     let marker = std::fs::read_to_string(root.join(".unpacked")).expect("a completion marker");
-    assert_eq!(marker, puncode_security::version::BUNDLED_PLUGIN_VERSION);
+    assert_eq!(marker.trim().len(), 64, "a sha-256 digest: {marker}");
+    assert!(
+        marker.trim().chars().all(|c| c.is_ascii_hexdigit()),
+        "{marker}"
+    );
 }
+
+// Replacement of an altered tree is NOT tested here on purpose. Doing it means
+// tampering with the one unpacked plugin every other suite shares, and a test
+// that can corrupt its neighbours is worse than no test. The digest itself is
+// covered on temporary trees in runtime::plugin::integrity_tests, which is
+// where the logic lives.
 
 // The plugin is the caller's by default; nothing else should be able to read
 // the credentials-adjacent state directory it lives beside.

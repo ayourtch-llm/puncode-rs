@@ -320,6 +320,13 @@ callbacks.
 The security plugin under `crates/puncode-security/plugin/` is redistributed
 **verbatim and unmodified** from the upstream project. See [NOTICE](NOTICE).
 
+It is embedded in the binary and unpacked once per version to
+`~/.codex-security/bundled/`. That unpacked copy sits on disk between commands,
+and a scan executes its scripts — so the tree is digested at unpack time and
+verified before every reuse. A copy that no longer matches what the binary
+ships is replaced, and the replacement is announced rather than done quietly:
+something having changed under you is worth knowing even once it is fixed.
+
 ## Contributing
 
 [HANDOFF.md](HANDOFF.md) carries the working knowledge that is not recoverable

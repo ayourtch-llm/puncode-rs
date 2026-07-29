@@ -127,6 +127,21 @@ that result was discarded.
 
 `./scripts/scan-fixtures.sh` runs both and fails if either comes up short.
 
+## The unpacked plugin is verified, and why
+
+The plugin is embedded in the binary but unpacked to
+`~/.codex-security/bundled/plugin-<version>/` and reused between commands. The
+original design trusted a marker file, so only `plugin.json` was re-read; the
+other 100-odd files, including the Python a scan executes, were never checked
+again. Appending a line to `scripts/workbench_db.py` in that tree left
+everything running normally and `doctor` reporting the plugin "ok" —
+demonstrated, not theorised.
+
+The marker now holds a digest over sorted path plus contents, verified before
+reuse, and a mismatch replaces the tree and says so. Do not "optimise" that
+check away: it costs a fraction of the ~300 ms a `doctor` run already takes,
+before a scan that runs for minutes.
+
 ## Open
 
 1. **`report.md` finalisation is flaky.** Detection is reliable; the agent
