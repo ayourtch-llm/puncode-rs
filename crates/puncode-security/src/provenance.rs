@@ -35,19 +35,19 @@ pub struct Provenance {
     ///
     /// Two scans naming the same plugin version could still have run different
     /// code; this says whether they did.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin_digest: Option<String>,
     /// The model asked for, when one was named.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// The endpoint, with any credentials removed. Absent means hosted Codex.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
     /// The request shape used against that endpoint.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wire_api: Option<String>,
     /// Adaptations applied to requests on the way out.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub endpoint_adaptations: Vec<String>,
     /// Whether the agent's commands ran without a sandbox.
     pub sandbox_disabled: bool,
@@ -258,6 +258,46 @@ mod tests {
         let read = Provenance::read(directory.path()).expect("reads");
 
         assert_eq!(read, original);
+    }
+
+    /// The record this tool actually writes leaves out whatever did not apply,
+    /// and it must still be readable. An earlier round-trip test used a record
+    /// with every field populated and so proved nothing: a real scan against a
+    /// hosted service names no model and no adaptations, and reading its own
+    /// record back failed.
+    #[test]
+    fn survives_a_round_trip_with_fields_left_out() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let sparse = Provenance {
+            model: None,
+            endpoint: None,
+            wire_api: None,
+            plugin_digest: None,
+            endpoint_adaptations: Vec::new(),
+            ..record()
+        };
+
+        sparse.write(directory.path()).expect("writes");
+        let read = Provenance::read(directory.path()).expect("reads its own record back");
+
+        assert_eq!(read, sparse);
+    }
+
+    /// The minimum a record could contain and still be worth reading.
+    #[test]
+    fn reads_a_record_holding_only_what_always_applies() {
+        let directory = tempfile::tempdir().expect("a directory");
+        std::fs::write(
+            directory.path().join("provenance.json"),
+            r#"{"tool":"puncode-security","toolVersion":"0.1.0","pluginVersion":"0.1.14",
+                "sandboxDisabled":true,"mode":"standard","startedAt":"a","completedAt":"b"}"#,
+        )
+        .expect("writes");
+
+        let read = Provenance::read(directory.path()).expect("reads");
+
+        assert!(read.sandbox_disabled);
+        assert_eq!(read.model, None);
     }
 
     /// Two scans naming one plugin version could still have run different code.
