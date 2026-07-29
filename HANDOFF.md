@@ -165,8 +165,37 @@ fixture with exactly one protection broken.
   concatenation in find_item", the right function, coverage complete, no
   deferrals, exit 0. All six cited locations resolve. The scanner found an
   injected flaw in code it had reported clean five times.
+- **`drop-validator`: caught.** `CWE-22`, "Path traversal via unvalidated SKU in
+  export_path". And it cited line 15, the `SKU_PATTERN` constant, as
+  `root_control` — it noticed the validator exists and is not applied here.
 
-The other two are still running; results go here when they land.
+`list-to-shell` still running.
+
+### The prediction that was wrong, and the better statement
+
+I expected `drop-validator` to be missed. The reasoning was the earlier
+`report-service` result: `/admin/export` omits the `require_admin()` both its
+siblings call, and the scan never noticed. From that I wrote **"it can follow
+taint it can see, and it cannot see an absence."**
+
+Too coarse. Compare what each removal leaves behind:
+
+```python
+# drop-validator, caught: what remains is unsafe on its face
+return os.path.join(EXPORT_ROOT, f"{sku}.csv")
+
+# missing-authz, missed: what remains looks entirely ordinary
+return str(store.by_owner(connection, request.args.get("owner", "")))
+```
+
+The second is only wrong relative to its siblings. So the sharper claim is: **an
+absence is found when what remains is a recognisable unsafe idiom, and missed
+when what remains looks fine and only a comparison reveals it.** That is a much
+more useful thing to know about a scanner, and it is a different repair — the
+second class needs the model to compare peers, not to recognise patterns harder.
+
+Worth noting how it arrived: **the mutation experiment disconfirmed my
+hypothesis.** That is the argument for building it.
 
 **A control this experiment still needs.** The five clean runs of the unmutated
 fixture went through `scan-fixtures.sh`, not through the script used here. Until
