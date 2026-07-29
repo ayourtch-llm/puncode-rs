@@ -161,6 +161,35 @@ A test asserts both.
 **If you add a field carrying something sensitive, give it a type rather than a
 convention.** Three fixes over two days did not stop the leak; the type did.
 
+## Where the bugs have actually been
+
+Not in units. Every unit test passed while each of these was live. They were
+found by two questions, both worth asking again:
+
+**"Which of these features have never met each other?"**
+
+- `--repeat` with `--capture-traffic`: every run opened the same file with
+  truncate, so run two erased run one. Each feature was correct alone.
+- A credential redaction applied to `provenance.json` and to none of the three
+  other places that printed the same URL.
+
+**"Which branch has never actually run?"**
+
+- `verify` reading a provenance record: it reported "no provenance record" while
+  the file sat in the directory, because the read side lacked `serde(default)`
+  and every record a real scan writes omits some optional field. The round-trip
+  test passed throughout — it used a record with every field populated, which is
+  the case that never happens.
+
+The pattern in all of them: a test that examined the easy case, and looked like
+coverage. When you add something, run the path a user will actually hit, with
+the inputs they will actually have, and read the output rather than the exit
+code.
+
+Branches verified this way and known good: capture truncation reports the real
+size, `--min-agreement` announces how many it hid, `--repeat` names which runs
+failed, provenance is written per run under `--repeat`.
+
 ## Open
 
 1. **`report.md` finalisation is flaky.** Detection is reliable; the agent
