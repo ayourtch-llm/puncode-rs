@@ -27,6 +27,15 @@ pub type JsonObject = Map<String, Value>;
 /// the same configurations.
 const RESERVED_KEYS: [&str; 3] = ["__proto__", "constructor", "prototype"];
 
+/// How deeply configuration overrides may nest.
+///
+/// Both the validation and the merge below walk the structure recursively, so
+/// depth is bounded before either does. The command line already refuses a
+/// longer dotted key, but this is a library others call: a caller handing over
+/// configuration parsed from somewhere untrusted would otherwise exhaust the
+/// stack, which aborts the process rather than returning an error.
+const MAX_OVERRIDE_DEPTH: usize = 64;
+
 const REQUIRES_V2: &str = "The selected Codex Security plugin requires native multi-agent v2; ";
 
 /// Configuration for a Codex Security client.
@@ -211,27 +220,43 @@ fn write_private_file(path: &Path, contents: &str) -> Result<()> {
 
 /// Rejects JavaScript-reserved keys anywhere in the overrides, including inside
 /// arrays.
-fn validate_override_keys(value: &Value) -> Result<()> {
+fn validate_override_keys(value: &Value, depth: usize) -> Result<()> {
+    if depth > MAX_OVERRIDE_DEPTH {
+        return Err(too_deep());
+    }
     match value {
         Value::Array(items) => {
             for item in items {
-                validate_override_keys(item)?;
+                validate_override_keys(item, depth + 1)?;
             }
             Ok(())
         }
-        Value::Object(object) => validate_override_keys_object(object),
+        Value::Object(object) => validate_override_keys_object_at(object, depth + 1),
         _ => Ok(()),
     }
 }
 
+fn too_deep() -> Error {
+    Error::configuration(format!(
+        "Codex overrides nest deeper than {MAX_OVERRIDE_DEPTH} levels."
+    ))
+}
+
 fn validate_override_keys_object(object: &JsonObject) -> Result<()> {
+    validate_override_keys_object_at(object, 0)
+}
+
+fn validate_override_keys_object_at(object: &JsonObject, depth: usize) -> Result<()> {
+    if depth > MAX_OVERRIDE_DEPTH {
+        return Err(too_deep());
+    }
     for (key, item) in object {
         if RESERVED_KEYS.contains(&key.as_str()) {
             return Err(Error::configuration(format!(
                 "Invalid Codex override key: {key}."
             )));
         }
-        validate_override_keys(item)?;
+        validate_override_keys(item, depth + 1)?;
     }
     Ok(())
 }
@@ -352,11 +377,23 @@ fn validate_native_multi_agent_v2_overrides(overrides: &JsonObject) -> Result<()
 
 /// Merges `overrides` into `base`, recursing only where both sides are tables.
 fn deep_merge(base: &mut JsonObject, overrides: &JsonObject) {
+    deep_merge_at(base, overrides, 0);
+}
+
+/// Merges, refusing to descend further than validation already allowed.
+///
+/// Reached only after `validate_override_keys_object`, so the bound should
+/// never bite; it is here because a merge that recurses without one is a stack
+/// overflow waiting for the day the validation is changed or bypassed.
+fn deep_merge_at(base: &mut JsonObject, overrides: &JsonObject, depth: usize) {
+    if depth > MAX_OVERRIDE_DEPTH {
+        return;
+    }
     for (key, value) in overrides {
         let merged = match (base.get(key), value) {
             (Some(Value::Object(existing)), Value::Object(override_table)) => {
                 let mut existing = existing.clone();
-                deep_merge(&mut existing, override_table);
+                deep_merge_at(&mut existing, override_table, depth + 1);
                 Value::Object(existing)
             }
             _ => value.clone(),

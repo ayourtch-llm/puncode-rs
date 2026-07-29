@@ -360,3 +360,50 @@ fn returns_the_model_without_trimming_it() {
     assert_eq!(model.model, " padded ");
     assert_eq!(model.reasoning_effort, " high ");
 }
+
+/// The command line bounds dotted keys, but this is a library others call. A
+/// caller handing over configuration parsed from somewhere untrusted would
+/// otherwise exhaust the stack, which aborts the process rather than returning
+/// an error.
+///
+/// Found by scanning this project with itself: the scan filed no findings, but
+/// noted that deep_merge had no depth limit.
+#[test]
+fn refuses_overrides_that_nest_too_deeply() {
+    // Deep enough to pass the bound, shallow enough that building and dropping
+    // it here does not exhaust the stack first: serde_json::Value drops
+    // recursively, and an earlier attempt at 2000 levels aborted the test
+    // process before the code under test ran.
+    let mut value = serde_json::json!("leaf");
+    for _ in 0..200 {
+        value = serde_json::json!({ "nested": value });
+    }
+    let overrides = value.as_object().expect("an object").clone();
+
+    let refused = merged_codex_config(&PuncodeSecurityConfig {
+        codex_overrides: Some(overrides),
+        ..PuncodeSecurityConfig::default()
+    });
+
+    let complaint = refused.expect_err("a refusal").to_string();
+    assert!(complaint.contains("nest deeper"), "{complaint}");
+}
+
+/// Ordinary nesting still works; the bound is far above anything real.
+#[test]
+fn accepts_ordinary_nesting() {
+    let overrides = serde_json::json!({
+        "model_providers": { "local": { "name": "x", "base_url": "http://h/v1" } }
+    })
+    .as_object()
+    .expect("an object")
+    .clone();
+
+    assert!(
+        merged_codex_config(&PuncodeSecurityConfig {
+            codex_overrides: Some(overrides),
+            ..PuncodeSecurityConfig::default()
+        })
+        .is_ok()
+    );
+}
