@@ -20,6 +20,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use puncode_security::diagnosis::{Cause, recognise};
+use puncode_security::provenance::redact_endpoint;
 use puncode_security::runtime::{
     PluginPythonOptions, bundled_plugin_root, resolve_codex_command, resolve_plugin_python,
 };
@@ -203,6 +204,18 @@ fn check_sandbox() -> Health {
     }
 }
 
+/// A transport failure described without quoting the address it was given.
+///
+/// A transport error's own text can include the URL, credentials and all.
+fn error_kind(error: &ureq::Error) -> String {
+    match error {
+        ureq::Error::Io(inner) => inner.kind().to_string(),
+        ureq::Error::Timeout(_) => "timed out".to_owned(),
+        ureq::Error::HostNotFound => "host not found".to_owned(),
+        _ => "could not connect".to_owned(),
+    }
+}
+
 /// The bwrap that ships with the installed codex, if it can be found.
 fn find_bundled_bwrap() -> Option<PathBuf> {
     let home = std::env::home_dir()?;
@@ -218,7 +231,12 @@ fn find_bundled_bwrap() -> Option<PathBuf> {
 }
 
 /// Whether anything answers at the endpoint.
+///
+/// The address is reported with any credentials removed. This output is meant
+/// to be shared — it is what someone pastes into a bug report when asking why a
+/// scan will not run — and a URL can carry a username and password.
 fn check_endpoint(base_url: &str) -> Health {
+    let shown = redact_endpoint(base_url);
     let target = format!("{}/models", base_url.trim_end_matches('/'));
     let agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(20)))
@@ -227,15 +245,15 @@ fn check_endpoint(base_url: &str) -> Health {
         .new_agent();
 
     match agent.get(&target).call() {
-        Ok(response) if response.status().is_success() => {
-            Health::Ok(format!("answers at {base_url}"))
-        }
+        Ok(response) if response.status().is_success() => Health::Ok(format!("answers at {shown}")),
         Ok(response) => Health::Broken {
-            detail: format!("{base_url} answered {}", response.status()),
+            detail: format!("{shown} answered {}", response.status()),
             remedy: Cause::EndpointUnreachable.explanation().to_owned(),
         },
+        // The error text is not interpolated: a transport error can quote the
+        // URL it was given, credentials and all.
         Err(error) => Health::Broken {
-            detail: format!("{base_url} did not answer: {error}"),
+            detail: format!("{shown} did not answer ({})", error_kind(&error)),
             remedy: Cause::EndpointUnreachable.explanation().to_owned(),
         },
     }

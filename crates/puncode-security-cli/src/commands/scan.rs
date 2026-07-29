@@ -40,7 +40,7 @@ pub fn dry_run(arguments: &ScanArgs, current_directory: &Path) -> Result<String,
     client.close().map_err(|error| error.to_string())?;
 
     Ok(match arguments.output.resolved() {
-        Format::Text => render_text(&preflight),
+        Format::Text => render_text(&preflight, arguments),
         Format::Json => serde_json::to_string_pretty(&report(&preflight, arguments))
             .map_err(|error| error.to_string())?,
         Format::Jsonl => serde_json::to_string(&report(&preflight, arguments))
@@ -248,7 +248,10 @@ fn report(preflight: &ScanPreflight, arguments: &ScanArgs) -> Value {
     // running a real scan.
     if let Some(base_url) = &arguments.base_url {
         record["modelEndpoint"] = json!({
-            "baseUrl": base_url,
+            // Reported with credentials removed: a dry run is what someone
+            // shares to show what a scan would do, and a URL can carry a
+            // username and password.
+            "baseUrl": puncode_security::provenance::redact_endpoint(base_url),
             "wireApi": puncode_security::model_endpoint::WireApi::from(arguments.wire_api).as_str(),
             "apiKeyEnv": arguments.api_key_env,
         });
@@ -286,7 +289,7 @@ fn authentication(authentication: ScanAuthentication) -> Value {
 }
 
 /// The same report, for a person.
-fn render_text(preflight: &ScanPreflight) -> String {
+fn render_text(preflight: &ScanPreflight, arguments: &ScanArgs) -> String {
     let mut lines = vec![
         "Dry run: nothing was scanned.".to_owned(),
         String::new(),
@@ -323,6 +326,14 @@ fn render_text(preflight: &ScanPreflight) -> String {
         ));
     }
     lines.push(format!("  model            {}", preflight.model));
+    // Reported here as well as in the structured form: someone reading the
+    // human rendering is asking the same question about where the model runs.
+    if let Some(base_url) = &arguments.base_url {
+        lines.push(format!(
+            "  endpoint         {}",
+            puncode_security::provenance::redact_endpoint(base_url)
+        ));
+    }
     lines.push(format!("  reasoning effort {}", preflight.reasoning_effort));
     lines.push(format!(
         "  authentication   {}",

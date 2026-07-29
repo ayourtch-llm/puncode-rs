@@ -806,3 +806,33 @@ fn each_repeated_run_captures_to_its_own_file() {
         "expected one capture per run, found {written:?}"
     );
 }
+
+/// A URL can carry a username and password, and these outputs are the ones
+/// people share: a dry run shows what a scan would do, and doctor is what gets
+/// pasted into a bug report when a scan will not start.
+#[test]
+fn never_prints_credentials_from_an_endpoint_url() {
+    const SECRET: &str = "supersecret";
+    let url = format!("http://someuser:{SECRET}@127.0.0.1:1/v1");
+
+    let mut checked = 0;
+    for arguments in [
+        vec!["scan", ".", "--dry-run", "--json", "--base-url", &url],
+        vec!["scan", ".", "--dry-run", "--base-url", &url],
+        vec!["doctor", "--base-url", &url],
+        vec!["doctor", "--json", "--base-url", &url],
+    ] {
+        let (_, shown, complaint) = run(&arguments);
+        assert!(
+            !shown.contains(SECRET) && !complaint.contains(SECRET),
+            "{arguments:?} leaked the credential:\n{shown}\n{complaint}"
+        );
+        // The host must survive, or the redaction has removed the useful part.
+        assert!(
+            shown.contains("127.0.0.1") || complaint.contains("127.0.0.1"),
+            "{arguments:?} lost the address entirely:\n{shown}\n{complaint}"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 4);
+}
