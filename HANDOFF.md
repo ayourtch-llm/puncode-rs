@@ -197,11 +197,24 @@ second class needs the model to compare peers, not to recognise patterns harder.
 Worth noting how it arrived: **the mutation experiment disconfirmed my
 hypothesis.** That is the argument for building it.
 
-**A control this experiment still needs.** The five clean runs of the unmutated
-fixture went through `scan-fixtures.sh`, not through the script used here. Until
-the original is scanned through the *same* harness, a positive is very likely
-the mutation and not certainly so. One scan, and it must not run alongside the
-others — the endpoint takes one at a time.
+**The harness confound, measured rather than hedged.** I first wrote that the
+mutant scans used a different script from the five clean runs, so a positive was
+"very likely the mutation and not certainly so". Comparing the two invocations
+line by line, they are **flag-identical**:
+
+```
+scan <target> --output-dir <dir> --json --base-url <url>
+     --endpoint-compat merge-system --model <model> --dangerously-disable-sandbox
+```
+
+Both scan a single-commit git repository. Both repositories contain exactly
+`src/__init__.py` and `src/inventory.py`, and `diff` between the control tree
+and a mutant tree is the two removed guard lines and nothing else.
+
+So the confound is much smaller than the first note implied. What remains is
+that the control has never been run through *this* script on *this* day, and the
+model varies between runs — so the right control is still worth one scan. It
+just is not the loose comparison I described.
 
 ## Two workbench databases exist, and only one is live
 
