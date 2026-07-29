@@ -57,6 +57,8 @@ pub enum Command {
     Bench(BenchArgs),
     /// Compare several scans of the same target.
     Consensus(ConsensusArgs),
+    /// Check what would stop a scan, before running one.
+    Doctor(DoctorArgs),
 }
 
 /// A known incompatibility to work around when talking to an endpoint.
@@ -96,6 +98,19 @@ pub struct BenchArgs {
     /// Fail if more than this many findings matched nothing planted.
     #[arg(long, value_name = "N")]
     pub max_false_positives: Option<usize>,
+    #[command(flatten)]
+    pub output: OutputOptions,
+}
+
+/// Checking what would stop a scan.
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    /// Also exercise this endpoint.
+    #[arg(long, value_name = "URL", env = "CODEX_SECURITY_BASE_URL")]
+    pub base_url: Option<String>,
+    /// Ask the endpoint for this model.
+    #[arg(long, value_name = "MODEL")]
+    pub model: Option<String>,
     #[command(flatten)]
     pub output: OutputOptions,
 }

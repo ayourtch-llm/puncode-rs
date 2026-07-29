@@ -45,6 +45,42 @@ puncode-security info                         # versions and configuration
 
 Exit codes: `0` clean, `1` findings at or above `--fail-on-severity`, `2` error.
 
+## Before you spend a scan
+
+```sh
+puncode-security doctor --base-url http://your-host:8080/v1 --model my-model
+```
+
+```
+  ok       codex            codex-cli 0.146.0
+  ok       plugin           unpacked at ~/.codex-security/bundled/plugin-0.1.14
+  ok       python           /usr/bin/python3.12
+  BROKEN   sandbox          bwrap: Failed to make / slave: Permission denied
+                            Commands could not run: the Codex sandbox could not
+                            start... an unprivileged container with an idmapped
+                            root filesystem is a common cause.
+  ok       endpoint         answers at http://your-host:8080/v1
+  BROKEN   system messages  the endpoint refused two system messages
+                            ...The order is not the problem, so reordering will
+                            not help. Retry with --endpoint-compat merge-system.
+
+2 thing(s) would stop a scan
+```
+
+Real output. A scan against a local model can run for ten minutes and end in
+"completed without required artifacts" when the actual answer was available in a
+second. Every check here exists because something went wrong once and took a
+long time to explain.
+
+Two rules it holds to. **Checks are run, never inferred from configuration** —
+that a sandbox mode is set says nothing about whether a namespace can be created
+on this host, and only trying it answers that. **A check that could not run is
+reported as skipped, never as working**, and does not affect the exit code;
+treating unknown as broken teaches people to ignore the tool.
+
+Exits 1 if anything would stop a scan, so it can gate a job. `--json` for the
+same in machine-readable form.
+
 ## Running against a local model
 
 Point it at any OpenAI-compatible endpoint:

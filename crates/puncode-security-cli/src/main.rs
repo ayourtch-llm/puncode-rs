@@ -198,6 +198,32 @@ fn scan(options: &cli::ScanArgs) -> std::process::ExitCode {
     }
 }
 
+/// Reports what would stop a scan.
+///
+/// Exits 1 when something is broken, so a job can refuse to go on. A check that
+/// could not run is not a failure — it is reported as skipped and does not
+/// change the exit code, because treating "unknown" as "broken" would train
+/// people to ignore this.
+fn doctor(options: &cli::DoctorArgs) -> std::process::ExitCode {
+    let checks = commands::doctor::examine(&commands::doctor::Examination {
+        environment: std::env::vars().collect(),
+        working_directory: std::env::current_dir().unwrap_or_else(|_| ".".into()),
+        base_url: options.base_url.clone(),
+        model: options.model.clone(),
+    });
+
+    if options.output.resolved().is_structured() {
+        println!("{}", commands::doctor::render_json(&checks));
+    } else {
+        println!("{}", commands::doctor::render(&checks));
+    }
+
+    if checks.iter().any(|check| check.health.blocks_a_scan()) {
+        return std::process::ExitCode::from(exit::FINDINGS);
+    }
+    std::process::ExitCode::from(exit::SUCCESS)
+}
+
 /// Scores scans against the corpus, failing when a threshold is not met.
 ///
 /// Exits 1 for a shortfall rather than 2, matching `scan`: a measurement that
@@ -317,6 +343,9 @@ fn main() -> std::process::ExitCode {
         // Returns early: a run that fell short of its thresholds must exit
         // non-zero, which the shared success path cannot express.
         Command::Bench(options) => return bench(options),
+        // Returns early: a broken environment must exit non-zero so this can
+        // gate a job.
+        Command::Doctor(options) => return doctor(options),
         Command::Export(options) => return export(options),
         Command::BulkScan(options) => commands::bulk_scan::run(
             options,
