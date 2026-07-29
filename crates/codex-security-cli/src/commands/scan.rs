@@ -16,7 +16,7 @@ use codex_security::api::{
     ScanPreflight,
 };
 use codex_security::config::CodexSecurityConfig;
-use codex_security::endpoint_shim::{Adaptations, EndpointShim, ShimOptions};
+use codex_security::endpoint_shim::{Adaptations, CaptureLimit, EndpointShim, ShimOptions};
 use codex_security::models::Completeness;
 use codex_security::result::ScanResult;
 use codex_security::targets::{DiffTarget, ScanMode, ScanTarget};
@@ -102,6 +102,13 @@ fn endpoint_adapter(
         &ShimOptions {
             adaptations,
             capture,
+            capture_limit: match arguments.capture_max_bytes {
+                // Nothing asked for keeps the default; an explicit zero is a
+                // deliberate request for no limit at all.
+                None => CaptureLimit::Default,
+                Some(0) => CaptureLimit::Unlimited,
+                Some(bytes) => CaptureLimit::Bytes(bytes),
+            },
         },
     )
     .map(Some)

@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
-use codex_security::endpoint_shim::{Adaptations, EndpointShim, ShimOptions};
+use codex_security::endpoint_shim::{Adaptations, CaptureLimit, EndpointShim, ShimOptions};
 use serde_json::Value;
 
 /// A server that records what it was sent and answers with what it was told to.
@@ -78,17 +78,27 @@ fn merging() -> ShimOptions {
     ShimOptions {
         adaptations: Adaptations { merge_system: true },
         capture: None,
+        capture_limit: CaptureLimit::Default,
     }
 }
 
 /// Sends one request through the adapter and returns the raw answer.
 fn through(shim: &EndpointShim, body: &str) -> String {
+    through_path(shim, "/v1/responses", body)
+}
+
+/// As above, to a specific path.
+///
+/// Codex is pointed at the forwarder's root and posts `/responses`; the path is
+/// appended to a base URL that already carries `/v1`. A live endpoint cares
+/// about the difference even though the recorder in these tests does not.
+fn through_path(shim: &EndpointShim, path: &str, body: &str) -> String {
     let address = shim.base_url().replace("http://", "");
     let mut stream = TcpStream::connect(address).expect("connects");
     stream
         .write_all(
             format!(
-                "POST /v1/responses HTTP/1.1\r\nHost: local\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                "POST {path} HTTP/1.1\r\nHost: local\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
                 body.len()
             )
             .as_bytes(),
@@ -248,6 +258,7 @@ fn records_both_what_was_sent_and_what_came_back() {
         &ShimOptions {
             adaptations: Adaptations { merge_system: true },
             capture: Some(destination.clone()),
+            capture_limit: CaptureLimit::Default,
         },
     )
     .expect("starts");
@@ -287,6 +298,7 @@ fn records_the_request_as_the_endpoint_received_it() {
         &ShimOptions {
             adaptations: Adaptations { merge_system: true },
             capture: Some(destination.clone()),
+            capture_limit: CaptureLimit::Default,
         },
     )
     .expect("starts");
@@ -314,6 +326,7 @@ fn writes_the_capture_private_to_its_owner() {
         &ShimOptions {
             adaptations: Adaptations::default(),
             capture: Some(destination.clone()),
+            capture_limit: CaptureLimit::Default,
         },
     )
     .expect("starts");
@@ -336,9 +349,128 @@ fn refuses_a_destination_it_cannot_write() {
         &ShimOptions {
             adaptations: Adaptations::default(),
             capture: Some("/does/not/exist/traffic.jsonl".into()),
+            capture_limit: CaptureLimit::Default,
         },
     );
 
     let complaint = refused.err().expect("a refusal").to_string();
     assert!(complaint.contains("traffic capture"), "{complaint}");
+}
+
+/// Talks to a real endpoint, when one is offered.
+///
+/// Ignored by default: the rest of this suite must pass with no network and no
+/// server, so a test that needs both cannot be part of the ordinary run. Give
+/// it an endpoint to exercise the path that only a real server can:
+///
+/// ```text
+/// CODEX_SECURITY_TEST_BASE_URL=http://host:8080/v1 \
+/// CODEX_SECURITY_TEST_MODEL=the-model \
+///   cargo test -p codex-security --test endpoint_shim -- --ignored
+/// ```
+#[test]
+#[ignore = "needs a live OpenAI-compatible endpoint; see the doc comment"]
+fn reaches_a_live_endpoint() {
+    let Ok(base_url) = std::env::var("CODEX_SECURITY_TEST_BASE_URL") else {
+        panic!("set CODEX_SECURITY_TEST_BASE_URL to the endpoint to test against");
+    };
+    let model = std::env::var("CODEX_SECURITY_TEST_MODEL")
+        .expect("set CODEX_SECURITY_TEST_MODEL to a model the endpoint serves");
+
+    let shim = EndpointShim::start(&base_url, &merging()).expect("starts");
+
+    // Shaped like what Codex sends: instructions plus developer items, which is
+    // the combination a single-system-message template refuses.
+    let request = serde_json::json!({
+        "model": model,
+        "instructions": "You are terse.",
+        "input": [
+            { "role": "developer", "content": [{ "type": "input_text", "text": "Answer briefly." }] },
+            { "role": "developer", "content": [{ "type": "input_text", "text": "Do not explain." }] },
+            { "role": "user", "content": [{ "type": "input_text", "text": "Say OK." }] },
+        ],
+        "max_output_tokens": 16,
+    })
+    .to_string();
+
+    let answer = through_path(&shim, "/responses", &request);
+
+    assert!(
+        answer.contains(" 200"),
+        "the endpoint refused the adapted request:\n{answer}"
+    );
+    // The failure this adaptation exists for, so that it is named if it returns.
+    assert!(
+        !answer.contains("System message must be at the beginning"),
+        "merging did not satisfy the template:\n{answer}"
+    );
+}
+
+/// A body cut short must say so, and must report its real length.
+///
+/// This is the whole point of the limit being safe to lower: a short record
+/// that claims to be whole is worse than no record.
+#[test]
+fn says_when_a_body_was_cut_short() {
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let directory = tempfile::tempdir().expect("a directory");
+    let destination = directory.path().join("traffic.jsonl");
+    let shim = EndpointShim::start(
+        &recorder.base_url,
+        &ShimOptions {
+            adaptations: Adaptations::default(),
+            capture: Some(destination.clone()),
+            capture_limit: CaptureLimit::Bytes(32),
+        },
+    )
+    .expect("starts");
+
+    through(&shim, REQUEST);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let written = std::fs::read_to_string(&destination).expect("reads the capture");
+    let request: Value =
+        serde_json::from_str(written.lines().next().expect("an entry")).expect("JSON");
+    assert_eq!(request["truncated"], true);
+    assert_eq!(request["body"].as_str().expect("a body").len(), 32);
+    // The real length, not the kept length.
+    assert!(
+        request["bytes"].as_u64().expect("a length") > 32,
+        "{request:?}"
+    );
+}
+
+/// A whole body is not marked as cut short.
+#[test]
+fn does_not_claim_a_whole_body_was_cut() {
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let directory = tempfile::tempdir().expect("a directory");
+    let destination = directory.path().join("traffic.jsonl");
+    let shim = EndpointShim::start(
+        &recorder.base_url,
+        &ShimOptions {
+            adaptations: Adaptations::default(),
+            capture: Some(destination.clone()),
+            capture_limit: CaptureLimit::Unlimited,
+        },
+    )
+    .expect("starts");
+
+    through(&shim, REQUEST);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let written = std::fs::read_to_string(&destination).expect("reads the capture");
+    for line in written.lines().filter(|line| !line.trim().is_empty()) {
+        let entry: Value = serde_json::from_str(line).expect("JSON");
+        assert_eq!(entry["truncated"], false, "{entry:?}");
+    }
+}
+
+#[test]
+fn reports_the_limit_it_will_apply() {
+    use codex_security::endpoint_shim::DEFAULT_CAPTURE_LIMIT;
+
+    assert_eq!(CaptureLimit::Default.bytes(), Some(DEFAULT_CAPTURE_LIMIT));
+    assert_eq!(CaptureLimit::Bytes(64).bytes(), Some(64));
+    assert_eq!(CaptureLimit::Unlimited.bytes(), None);
 }

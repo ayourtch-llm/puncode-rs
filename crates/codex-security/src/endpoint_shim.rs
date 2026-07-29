@@ -123,11 +123,36 @@ use crate::error::{Error, Result};
 /// A body beyond this is passed through untouched rather than held in memory.
 const MAX_ADAPTED_BODY: usize = 32 * 1_024 * 1_024;
 
-/// The most of one body that is written to a capture.
+/// How much of one body is written to a capture, unless told otherwise.
 ///
 /// Anything longer is cut and *said* to be cut. A truncation that is not
-/// announced reads as a complete record and is worse than none.
-const MAX_CAPTURED_BODY: usize = 1_024 * 1_024;
+/// announced reads as a complete record and is worse than none. A larger
+/// project may need a great deal more than this, so it is only the default.
+pub const DEFAULT_CAPTURE_LIMIT: usize = 1_024 * 1_024;
+
+/// How much of each body a capture keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CaptureLimit {
+    /// [`DEFAULT_CAPTURE_LIMIT`].
+    #[default]
+    Default,
+    /// At most this many bytes of each body.
+    Bytes(usize),
+    /// Whatever it takes. The file grows without bound.
+    Unlimited,
+}
+
+impl CaptureLimit {
+    /// The cap in bytes, where there is one.
+    #[must_use]
+    pub fn bytes(self) -> Option<usize> {
+        match self {
+            Self::Default => Some(DEFAULT_CAPTURE_LIMIT),
+            Self::Bytes(bytes) => Some(bytes),
+            Self::Unlimited => None,
+        }
+    }
+}
 
 /// A record of what passed through, for diagnosing an endpoint.
 ///
@@ -137,11 +162,12 @@ const MAX_CAPTURED_BODY: usize = 1_024 * 1_024;
 #[derive(Debug)]
 struct Capture {
     file: Mutex<std::fs::File>,
+    limit: CaptureLimit,
 }
 
 impl Capture {
     /// Opens `path`, replacing anything already there.
-    fn open(path: &Path) -> Result<Self> {
+    fn open(path: &Path, limit: CaptureLimit) -> Result<Self> {
         use std::os::unix::fs::OpenOptionsExt;
 
         let file = std::fs::OpenOptions::new()
@@ -159,23 +185,39 @@ impl Capture {
             })?;
         Ok(Self {
             file: Mutex::new(file),
+            limit,
         })
     }
 
     /// Records one body.
     fn record(&self, direction: &str, path: &str, status: Option<u16>, body: &[u8]) {
-        let truncated = body.len() > MAX_CAPTURED_BODY;
-        let kept = if truncated {
-            &body[..MAX_CAPTURED_BODY]
-        } else {
-            body
+        self.record_part(direction, path, status, body, body.len());
+    }
+
+    /// Records a body already cut short, where `total` is its real length.
+    ///
+    /// A streamed answer is collected only up to the limit, so the length of
+    /// what was kept cannot say whether anything was lost. Reporting it as
+    /// whole would be exactly the silent truncation this guards against.
+    fn record_part(
+        &self,
+        direction: &str,
+        path: &str,
+        status: Option<u16>,
+        body: &[u8],
+        total: usize,
+    ) {
+        let kept = match self.limit.bytes() {
+            Some(limit) if body.len() > limit => &body[..limit],
+            _ => body,
         };
+        let truncated = kept.len() < total;
         let entry = serde_json::json!({
             "direction": direction,
             "path": path,
             "status": status,
             "truncated": truncated,
-            "bytes": body.len(),
+            "bytes": total,
             "body": String::from_utf8_lossy(kept),
         });
         // A capture that cannot be written must not take the scan down with it.
@@ -195,6 +237,8 @@ pub struct ShimOptions {
     ///
     /// Absent by default. See [`Capture`] for what a present value writes.
     pub capture: Option<PathBuf>,
+    /// How much of each body to keep, when recording.
+    pub capture_limit: CaptureLimit,
 }
 
 /// A local forwarder that adapts requests on their way to an endpoint.
@@ -218,7 +262,7 @@ impl EndpointShim {
         // Opened before listening, so a destination that cannot be written is
         // reported now rather than discovered mid-scan.
         let capture = match &options.capture {
-            Some(path) => Some(Arc::new(Capture::open(path)?)),
+            Some(path) => Some(Arc::new(Capture::open(path, options.capture_limit)?)),
             None => None,
         };
 
@@ -394,14 +438,18 @@ fn serve_connection(
     // Collected alongside the stream rather than instead of it, and only up to
     // what would be written anyway.
     let mut recorded: Option<Vec<u8>> = capture.map(|_| Vec::new());
+    let recorded_limit = capture.and_then(|capture| capture.limit.bytes());
+    // Counted separately: what was kept cannot report what was dropped.
+    let mut streamed_total = 0usize;
     loop {
         let read = match source.read(&mut buffer) {
             Ok(0) => break,
             Ok(read) => read,
             Err(_) => break,
         };
+        streamed_total += read;
         if let Some(recorded) = recorded.as_mut()
-            && recorded.len() < MAX_CAPTURED_BODY
+            && recorded_limit.is_none_or(|limit| recorded.len() < limit)
         {
             recorded.extend_from_slice(&buffer[..read]);
         }
@@ -412,7 +460,7 @@ fn serve_connection(
         let _ = connection.flush();
     }
     if let (Some(capture), Some(recorded)) = (capture, recorded) {
-        capture.record("response", &path, Some(status), &recorded);
+        capture.record_part("response", &path, Some(status), &recorded, streamed_total);
     }
     let _ = connection.shutdown(Shutdown::Both);
     Ok(())

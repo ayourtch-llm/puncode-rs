@@ -226,6 +226,12 @@ pub struct ScanArgs {
     /// inside the repository being scanned.
     #[arg(long, value_name = "FILE", requires = "base_url")]
     pub capture_traffic: Option<PathBuf>,
+    /// Keep at most BYTES of each captured body (0 for no limit).
+    ///
+    /// Defaults to 1 MiB. A larger project may need considerably more; a body
+    /// that is cut short is always recorded as such.
+    #[arg(long, value_name = "BYTES", requires = "capture_traffic")]
+    pub capture_max_bytes: Option<usize>,
     /// Environment variable holding the endpoint's API key.
     #[arg(
         long,
