@@ -196,15 +196,32 @@ puncode-security consensus run-a/ run-b/ run-c/
 ```
 
 ```
-Comparing 3 runs of the same target
+Comparing 6 runs of the same target
 
-  3 of 3   OS command injection via /ping   critical
-  3 of 3   SQL injection via /user          severity disputed: critical, high
-  1 of 3   Unbounded response buffer
+  6 of 6   OS Command Injection in /ping Route  critical
+            also called: OS command injection via /ping endpoint
+            also called: OS command injection via user-supplied 'host' parameter
+            also called: User-supplied 'host' parameter is passed directly into
+                         subprocess.check_output with shell=True, enabling OS
+                         command injection.
+  6 of 6   SQL Injection in /user Route  severity disputed: critical, high
+            also called: SQL injection via /user endpoint
+            also called: SQL query is built via string concatenation using request
+                         parameter 'name', allowing SQL injection.
 
-  3 distinct, 2 in every run, 1 in only one
+  2 distinct, 2 in every run, 0 in only one
   1 disagreed on severity
 ```
+
+That is real output from six runs of one model over one fixture, and it shows
+what this is actually for. The six runs produced **six different titles for each
+flaw** — one of them a whole sentence. Grouped on wording that would read as a
+dozen findings; grouped on location it is two, both unanimous.
+
+It also shows what it did *not* do here. `0 in only one` means there was no
+noise to cut: on this fixture the model was entirely stable, and filtering by
+agreement would have gained nothing. What it surfaced instead was a severity the
+runs genuinely disagreed about, which no single report would have revealed.
 
 Findings are grouped by **where they point, never by how they are worded** — two
 runs describing one flaw differently have found one flaw. Runs that disagree
