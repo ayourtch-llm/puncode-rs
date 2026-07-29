@@ -573,3 +573,71 @@ fn quoted(line: &str) -> Option<String> {
     let end = rest.rfind(quote)?;
     Some(rest[..end].replace("\\\"", "\"").replace("\\'", "'"))
 }
+
+/// The upstream sources each committed oracle fixture was taken from.
+///
+/// Digests, not content. Most of these fixtures are tables of computed values —
+/// a formatted amount, a parsed row, a projected config — and there is no
+/// literal in the TypeScript to compare them against without running it, which
+/// this host cannot do. What can be checked is whether the code that produced
+/// them has moved.
+///
+/// A failure here does not mean the port is wrong. It means somebody updated
+/// the oracle checkout, the fixture beneath it may now be stale, and the answer
+/// is to re-derive the fixture rather than to edit this number.
+const ORACLE_SOURCES: &[(&str, &str, &str)] = &[
+    (
+        "api.ts",
+        "d5f33fc05831b6e5",
+        "scan-prompts.json, connection-failures.json",
+    ),
+    ("config.ts", "a5eed16f1d23a30d", "config-projection.json"),
+    ("cost.ts", "738cd7c8307a2976", "format-usd.json"),
+    ("multiscan.ts", "abb97540ee365b7b", "csv-parse.json"),
+    (
+        "scan-history-renderer.ts",
+        "0fcd25486cdd7849",
+        "scan-history.json",
+    ),
+];
+
+/// Notices when the oracle moves out from under the fixtures.
+///
+/// Every differential test compares the port against a committed fixture, and
+/// until this existed nothing noticed if upstream changed. The prompt fixture
+/// is checked line by line above; this covers the four that cannot be, because
+/// their contents are computed rather than quoted.
+#[test]
+fn the_oracle_sources_have_not_moved_under_the_fixtures() {
+    let root =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp/codex-security/sdk/typescript/src");
+    if !root.is_dir() {
+        eprintln!(
+            "SKIPPED the_oracle_sources_have_not_moved_under_the_fixtures: no oracle checkout at \
+             tmp/codex-security. Nothing is checking whether the committed fixtures still match \
+             the TypeScript they were taken from."
+        );
+        return;
+    }
+
+    let mut moved = Vec::new();
+    for (name, expected, fixtures) in ORACLE_SOURCES {
+        let Ok(source) = std::fs::read(root.join(name)) else {
+            moved.push(format!("{name}: gone from the checkout ({fixtures})"));
+            continue;
+        };
+        let digest = format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(&source));
+        if &&digest[..16] != expected {
+            moved.push(format!(
+                "{name}: {expected} -> {}, so re-derive {fixtures}",
+                &digest[..16]
+            ));
+        }
+    }
+
+    assert!(
+        moved.is_empty(),
+        "the oracle checkout has changed; the fixtures below may be stale:\n{}",
+        moved.join("\n")
+    );
+}

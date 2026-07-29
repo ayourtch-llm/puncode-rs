@@ -133,9 +133,23 @@ available, regenerating is better and this test should be replaced.
 — loudly, on stderr, saying exactly what is not being compared. A quiet skip
 would be the same silence it exists to remove.
 
-**The other oracle fixtures are still unchecked**: `config-projection.json`,
-`csv-parse.json`, `format-usd.json`, `scan-history.json`, `connection-failures.json`.
-Same shape of test would work for each.
+The other four fixtures hold **computed** values — a formatted amount, a parsed
+row, a projected config, a rendered table — so there is no quoted literal to
+compare and no way to re-derive them without Node. What can be checked is
+whether the code that produced them has moved:
+`the_oracle_sources_have_not_moved_under_the_fixtures` pins a digest of each
+upstream source and names the fixtures that depend on it.
+
+```
+cost.ts: 738cd7c8307a2976 -> 5826b2fb84c061fc, so re-derive format-usd.json
+```
+
+Confirmed live by appending a comment to `cost.ts` and watching it fail.
+
+**A failure there does not mean the port is wrong.** It means the oracle
+checkout was updated and the fixture beneath it may be stale. The answer is to
+re-derive the fixture, never to edit the recorded digest — editing the number is
+how a drift detector becomes a formality.
 
 ## Extending the prompt
 
