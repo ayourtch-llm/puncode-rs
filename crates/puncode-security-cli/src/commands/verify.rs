@@ -23,6 +23,13 @@ pub struct Verification {
     pub finding_count: Option<usize>,
     /// How the scan was produced, when it said.
     pub provenance: Option<Provenance>,
+    /// Whether the plugin that produced this is the one installed now.
+    ///
+    /// `None` when the scan did not record a digest, or when this build cannot
+    /// read its own. Not a failure either way: a scan made by an older version
+    /// is still a valid scan, but somebody trying to reproduce it should know
+    /// they would be running different code.
+    pub same_plugin: Option<bool>,
 }
 
 impl Verification {
@@ -46,14 +53,29 @@ pub fn run(scan_dir: &Path) -> Result<Verification, String> {
         Err(error) => (Some(error.to_string()), None),
     };
 
+    let provenance = Provenance::read(scan_dir).ok();
+    let same_plugin = provenance
+        .as_ref()
+        .and_then(|record| record.plugin_digest.as_deref())
+        .and_then(|recorded| installed_plugin_digest().map(|installed| installed == recorded));
+
     Ok(Verification {
         contract_failure,
         finding_count,
         // Absent is an ordinary answer: provenance is written by this tool, and
         // a scan made by another version or another implementation will not
         // have one.
-        provenance: Provenance::read(scan_dir).ok(),
+        provenance,
+        same_plugin,
     })
+}
+
+/// The digest of the plugin this build has unpacked.
+fn installed_plugin_digest() -> Option<String> {
+    let root = bundled_plugin_root().ok()?;
+    std::fs::read_to_string(root.join(".unpacked"))
+        .ok()
+        .map(|digest| digest.trim().to_owned())
 }
 
 /// The verification, for a person.
@@ -99,6 +121,22 @@ pub fn render(verification: &Verification, scan_dir: &Path) -> String {
         ),
     }
 
+    match verification.same_plugin {
+        Some(true) => lines.push("  ok       produced by the plugin installed here".to_owned()),
+        Some(false) => {
+            // Not a failure. Worth saying because reproducing this scan here
+            // would run different code than produced it.
+            lines.push(
+                "  differs  produced by a different plugin than the one installed here".to_owned(),
+            );
+            lines.push(
+                "           Rerunning here would not be rerunning what made these results."
+                    .to_owned(),
+            );
+        }
+        None => {}
+    }
+
     lines.push(String::new());
     lines.push(if verification.holds() {
         "These results are internally consistent.".to_owned()
@@ -130,6 +168,7 @@ pub fn render_json(verification: &Verification) -> String {
         "contractFailure": verification.contract_failure,
         "findingCount": verification.finding_count,
         "provenance": verification.provenance,
+        "samePlugin": verification.same_plugin,
         "note": "Seals are digests, not signatures: they catch a document changed without resealing, not someone who changed it and resealed. Consistency is also not correctness.",
     }))
     .unwrap_or_else(|error| format!("{{\"error\":\"{error}\"}}"))
@@ -168,6 +207,7 @@ mod tests {
                 tool_version: "0.1.0".to_owned(),
                 ..Provenance::default()
             }),
+            same_plugin: None,
         };
 
         let rendered = render(&verification, Path::new("/scan"));
@@ -182,6 +222,7 @@ mod tests {
             contract_failure: None,
             finding_count: Some(0),
             provenance: None,
+            same_plugin: None,
         };
 
         let rendered = render(&verification, Path::new("/scan"));
@@ -196,6 +237,7 @@ mod tests {
             contract_failure: None,
             finding_count: Some(3),
             provenance: None,
+            same_plugin: None,
         };
 
         let rendered = render(&verification, Path::new("/scan"));
@@ -216,11 +258,62 @@ mod tests {
             contract_failure: Some("findings.json: digest does not match".to_owned()),
             finding_count: None,
             provenance: None,
+            same_plugin: None,
         };
 
         assert!(!verification.holds());
         let rendered = render(&verification, Path::new("/scan"));
         assert!(rendered.contains("BROKEN"), "{rendered}");
         assert!(rendered.contains("not what a scan produced"), "{rendered}");
+    }
+}
+
+#[cfg(test)]
+mod plugin_tests {
+    use super::*;
+
+    fn checked(same_plugin: Option<bool>) -> Verification {
+        Verification {
+            contract_failure: None,
+            finding_count: Some(1),
+            provenance: None,
+            same_plugin,
+        }
+    }
+
+    /// Somebody trying to reproduce a result needs to know they would be
+    /// running different code than produced it.
+    #[test]
+    fn says_when_a_scan_came_from_a_different_plugin() {
+        let rendered = render(&checked(Some(false)), Path::new("/scan"));
+
+        assert!(rendered.contains("different plugin"), "{rendered}");
+        assert!(rendered.contains("would not be rerunning"), "{rendered}");
+    }
+
+    #[test]
+    fn says_when_the_plugin_matches() {
+        let rendered = render(&checked(Some(true)), Path::new("/scan"));
+
+        assert!(
+            rendered.contains("produced by the plugin installed here"),
+            "{rendered}"
+        );
+    }
+
+    /// A differing plugin is information, not a failure: a scan made by an
+    /// older version is still a valid scan.
+    #[test]
+    fn a_different_plugin_does_not_make_results_invalid() {
+        assert!(checked(Some(false)).holds());
+    }
+
+    /// Nothing is claimed when there is nothing to compare.
+    #[test]
+    fn says_nothing_about_a_plugin_it_cannot_compare() {
+        let rendered = render(&checked(None), Path::new("/scan"));
+
+        assert!(!rendered.contains("plugin installed here"), "{rendered}");
+        assert!(!rendered.contains("different plugin"), "{rendered}");
     }
 }

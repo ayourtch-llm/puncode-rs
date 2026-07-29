@@ -276,6 +276,11 @@ sealed digests do not match any more. What it cannot catch is somebody who
 changed a document *and* resealed it, which the output says rather than leaving
 you to assume otherwise.
 
+It also compares the plugin that produced the scan against the one installed
+here. A difference is not a failure — an older scan is still a valid scan — but
+it means rerunning here would not be rerunning what made these results, and
+that is worth knowing before trying to reproduce them.
+
 ## Knowing how a scan was produced
 
 Every scan writes `provenance.json` beside its findings:
