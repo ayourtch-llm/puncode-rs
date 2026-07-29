@@ -27,6 +27,7 @@ pub mod result;
 pub mod runtime;
 pub mod scan_comparison;
 pub mod scan_history_renderer;
+pub mod target_audit;
 pub mod targets;
 pub mod trusted_executable;
 pub mod version;
