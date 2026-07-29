@@ -1115,6 +1115,22 @@ another thread. Removing the retry makes that test fail — checked, not assumed
 A flaky suite is worse than a smaller one: it teaches whoever runs it to rerun
 rather than read, and then a real failure gets rerun too.
 
+## Verify with the script, not with a shell line
+
+`./scripts/verify.sh` runs formatting, clippy and the whole test suite, and
+exits non-zero if any of them fails. Use it as `./scripts/verify.sh && git
+commit ...`.
+
+It exists because it did not. A commit was pushed reporting a clean workspace
+while two tests were failing: the shell line ran `cargo test` and then `git
+commit` regardless, because a long chain had lost its `&&`. The failure scrolled
+past in the output and the report said green.
+
+Checked by breaking each thing it checks — a failing assertion and an
+unformatted file — and confirming exit 1 both times. Measure the **script's**
+exit code when you do that: the first attempt piped it through `head` and read
+`head`'s status, which was 0, and briefly looked like the guard did not work.
+
 ## Process notes that cost real time
 
 - **One run proves nothing here.** Model output varied on every attempt. Two

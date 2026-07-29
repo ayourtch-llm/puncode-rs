@@ -781,6 +781,16 @@ verified before every reuse. A copy that no longer matches what the binary
 ships is replaced, and the replacement is announced rather than done quietly:
 something having changed under you is worth knowing even once it is fixed.
 
+## Verifying a change
+
+```sh
+./scripts/verify.sh && git commit ...
+```
+
+Formatting, clippy and the whole test suite, with one exit code. Chaining those
+by hand is how a commit once went out reporting a clean workspace while two
+tests were failing.
+
 ## Contributing
 
 [HANDOFF.md](HANDOFF.md) carries the working knowledge that is not recoverable
