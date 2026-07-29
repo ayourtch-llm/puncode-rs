@@ -290,6 +290,25 @@ fn scan_once(options: &cli::ScanArgs) -> std::process::ExitCode {
             for explanation in progress.explanations(&problem) {
                 eprintln!("puncode-security: {explanation}");
             }
+            // Evidence rather than only a diagnosis. The workbench can say the
+            // scanned tree changed and cannot say what changed; usually it is
+            // one build artefact sitting next to the source, and naming it
+            // turns a baffling failure into an obvious one.
+            if puncode_security::diagnosis::recognise(&problem)
+                == Some(puncode_security::diagnosis::Cause::WorkingTreeChanged)
+            {
+                let repository = options
+                    .repository
+                    .clone()
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| ".".into()));
+                let changed = puncode_security::diagnosis::changed_paths(&repository);
+                if !changed.is_empty() {
+                    eprintln!("puncode-security: what differs from the last commit:");
+                    for path in changed {
+                        eprintln!("puncode-security:   {path}");
+                    }
+                }
+            }
             report_partial_output(progress.scan_dir.as_deref());
             std::process::ExitCode::from(exit::ERROR)
         }

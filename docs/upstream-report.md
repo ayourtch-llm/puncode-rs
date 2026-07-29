@@ -128,6 +128,33 @@ compute the target kind itself, because doing so would mean reimplementing the
 plugin's digest and cleanliness logic and would drift from it. Asking the
 workbench is both simpler and correct — but only the plugin knows to ask.
 
+## A second, related conflict
+
+The scan skills ask the agent to confirm a finding by running the code. The
+workbench hashes the working tree and refuses to record a scan whose contents
+changed:
+
+```
+Could not save the Puncode Security scan: Working-tree contents changed
+while the scan was running. Start a new scan.
+```
+
+On any repository with a build step those two requirements are in direct
+conflict. A scan of a small C project here failed exactly this way: the agent
+ran `make` to confirm a memory-safety finding, the binary landed beside the
+source, and the whole scan was refused at the end. `git status` afterwards:
+
+```
+?? store
+```
+
+The agent did nothing wrong, the check is doing its job, and the scan is lost
+anyway. Same shape as the contract problem above — enforced at publication,
+after all the work.
+
+Worth either telling the agent to build outside the tree, or hashing only the
+paths in scope, or excluding files that did not exist when the scan started.
+
 ## Reproducing
 
 Any model that does not go exploring will do. The failures here were with

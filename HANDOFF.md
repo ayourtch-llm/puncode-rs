@@ -511,6 +511,35 @@ truth**, so the provenance is part of the record and a reader can discount it.
 The real findings document from that run is checked in as a fixture, and
 removing the class pass makes those tests fail — checked by removing it.
 
+## The agent can destroy its own scan by verifying a finding
+
+A real failure, seen for the first time on 2026-07-29 scanning `kv-store`:
+
+```
+Could not save the Puncode Security scan: Working-tree contents changed
+while the scan was running. Start a new scan.
+```
+
+Nothing had touched the repository. **The agent compiled the C it was
+scanning** — reasonably, to confirm a memory-safety flaw — and `make` left the
+binary in the tree. The workbench hashes the working tree and refused to record
+the scan. `git status` on the snapshot afterwards: `?? store`.
+
+Distinct from "Repository HEAD changed", which the fixture runner's snapshot
+already fixed; this one is content, not commits, and the writer is inside the
+scan rather than outside it.
+
+`Cause::WorkingTreeChanged` names it now, and the CLI goes one better than a
+diagnosis: on that failure it runs `git status --porcelain` over the target and
+prints what differs. The workbench can say the tree changed and cannot say what
+changed; usually it is one obvious artefact, and naming it turns a baffling
+failure into a one-line one.
+
+**This is worth reporting upstream too.** The skills ask the agent to confirm
+findings by running the code, and the workbench refuses a scan whose tree
+changed. Those two requirements are in direct conflict on any repository with a
+build step, and the cost lands at the very end.
+
 ## doctor reports the model as a note, on purpose
 
 `check_model_listed` compares `--model` against the endpoint's own `/models`

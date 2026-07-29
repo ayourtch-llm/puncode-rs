@@ -37,6 +37,8 @@ pub enum Cause {
     ModelNotServed,
     /// A scan is already recorded against this output directory.
     OutputDirectoryAlreadyScanned,
+    /// Something wrote into the scanned tree while the scan was running.
+    WorkingTreeChanged,
 }
 
 impl Cause {
@@ -73,6 +75,15 @@ impl Cause {
             Self::ModelNotServed => {
                 "The endpoint does not serve the model that was asked for. Check --model against \
                  what the server lists."
+            }
+            Self::WorkingTreeChanged => {
+                "Something wrote into the scanned code while the scan was running, so the \
+                 workbench refused to record it — the results no longer describe a state that \
+                 existed. The findings are still on disk. In practice the writer is usually the \
+                 agent itself: asked to confirm a memory-safety flaw it will compile the code, \
+                 and the object files land in the tree it is scanning. Check for build output \
+                 next to the source. Scan a copy of the repository rather than the working tree, \
+                 or arrange for builds to write somewhere else."
             }
             Self::OutputDirectoryAlreadyScanned => {
                 "A scan is already recorded against this output directory, and the workbench \
@@ -124,6 +135,13 @@ pub fn recognise_from(text: &str, origin: Origin) -> Option<Cause> {
     }
     if origin == Origin::CommandOutput {
         return None;
+    }
+    // Matched on the workbench's own wording. Both halves are required: a scan
+    // of a codebase that discusses working trees must not look like this.
+    if lowered.contains("working-tree contents changed")
+        || (lowered.contains("working tree") && lowered.contains("changed while the scan"))
+    {
+        return Some(Cause::WorkingTreeChanged);
     }
     if lowered.contains("system message must be at the beginning")
         || (lowered.contains("system message") && lowered.contains("only one"))
@@ -512,5 +530,173 @@ mod tests {
 
         let held = format!("{watch:?}");
         assert!(!held.contains("SECRET_SOURCE_LINE"), "{held}");
+    }
+}
+
+#[cfg(test)]
+mod working_tree_tests {
+    use super::*;
+
+    /// The exact message a real run produced, after the agent compiled the C it
+    /// was scanning and left the binary in the tree.
+    #[test]
+    fn recognises_the_message_a_real_run_produced() {
+        let failure = "Could not save the Puncode Security scan: Working-tree contents changed \
+                       while the scan was running. Start a new scan.";
+
+        assert_eq!(recognise(failure), Some(Cause::WorkingTreeChanged));
+    }
+
+    /// The explanation has to name the likely writer, because the message does
+    /// not and the obvious reading — "somebody edited my code" — sends you
+    /// looking in the wrong place.
+    #[test]
+    fn the_explanation_names_the_agent_as_the_usual_writer() {
+        let explanation = Cause::WorkingTreeChanged.explanation();
+
+        assert!(explanation.contains("agent itself"), "{explanation}");
+        assert!(explanation.contains("compile"), "{explanation}");
+        assert!(explanation.contains("build output"), "{explanation}");
+        // And says the work is not lost, which the workbench's message does not.
+        assert!(explanation.contains("still on disk"), "{explanation}");
+    }
+
+    /// A scan of a codebase that discusses working trees — this one — must not
+    /// look like this failure.
+    #[test]
+    fn does_not_fire_on_prose_about_working_trees() {
+        for text in [
+            "the working tree is clean",
+            "compare the working tree against HEAD",
+            "Working-tree contents are hashed for the snapshot digest",
+        ] {
+            assert_eq!(recognise(text), None, "{text}");
+        }
+    }
+
+    /// And never from the repository's own output, like every other cause but
+    /// the sandbox.
+    #[test]
+    fn is_not_read_out_of_command_output() {
+        let failure = "Working-tree contents changed while the scan was running.";
+
+        assert_eq!(recognise_from(failure, Origin::CommandOutput), None);
+    }
+
+    /// It must not be confused with the HEAD failure, which has a different
+    /// cause and a different fix.
+    #[test]
+    fn is_distinct_from_the_head_failure() {
+        let head = "Repository HEAD changed while the scan was running. Start a new scan.";
+
+        assert_ne!(recognise(head), Some(Cause::WorkingTreeChanged));
+    }
+}
+
+/// Files in a repository that differ from what is committed.
+///
+/// Only meaningful for [`Cause::WorkingTreeChanged`], and it is the difference
+/// between a diagnosis and evidence: the workbench says the tree changed and
+/// cannot say what changed, while the answer is usually one obvious build
+/// artefact sitting next to the source.
+///
+/// Best effort by design. Not a git repository, no `git` on the path, a slow
+/// filesystem — all of them return nothing rather than delaying a failure that
+/// has already happened.
+#[must_use]
+pub fn changed_paths(repository: &std::path::Path) -> Vec<String> {
+    /// Enough to recognise the culprit; a longer list is a different problem.
+    const MOST: usize = 10;
+
+    let Ok(output) = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repository)
+        .args(["status", "--porcelain", "--untracked-files=all"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (status, path) = line.split_at(line.char_indices().nth(3)?.0);
+            Some(format!("{} {path}", status.trim()))
+        })
+        .take(MOST)
+        .collect()
+}
+
+#[cfg(test)]
+mod changed_paths_tests {
+    use super::*;
+
+    fn repository() -> tempfile::TempDir {
+        let directory = tempfile::tempdir().expect("a directory");
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(directory.path())
+                .args(args)
+                .output()
+                .expect("git runs");
+        };
+        run(&["init", "-q"]);
+        run(&["config", "user.email", "t@example.com"]);
+        run(&["config", "user.name", "t"]);
+        std::fs::write(directory.path().join("a.c"), "int main(void){return 0;}\n")
+            .expect("writes");
+        run(&["add", "-A"]);
+        run(&["commit", "-qm", "one"]);
+        directory
+    }
+
+    /// The real shape of the failure: a compiled binary left beside the source.
+    #[test]
+    fn names_a_build_artefact_left_in_the_tree() {
+        let directory = repository();
+        std::fs::write(directory.path().join("a.out"), [0x7f, b'E', b'L', b'F']).expect("writes");
+
+        let changed = changed_paths(directory.path());
+
+        assert_eq!(changed, vec!["?? a.out"]);
+    }
+
+    #[test]
+    fn names_an_edited_file() {
+        let directory = repository();
+        std::fs::write(directory.path().join("a.c"), "int main(void){return 1;}\n")
+            .expect("writes");
+
+        assert_eq!(changed_paths(directory.path()), vec!["M a.c"]);
+    }
+
+    #[test]
+    fn says_nothing_about_a_clean_tree() {
+        assert!(changed_paths(repository().path()).is_empty());
+    }
+
+    /// A failure that has already happened must not be delayed by this, so
+    /// anything that does not work returns nothing.
+    #[test]
+    fn says_nothing_when_there_is_no_repository() {
+        let directory = tempfile::tempdir().expect("a directory");
+
+        assert!(changed_paths(directory.path()).is_empty());
+        assert!(changed_paths(std::path::Path::new("/does/not/exist")).is_empty());
+    }
+
+    /// Bounded: a tree with hundreds of changes is a different problem, and a
+    /// wall of paths buries the one line that matters.
+    #[test]
+    fn keeps_the_list_short() {
+        let directory = repository();
+        for index in 0..40 {
+            std::fs::write(directory.path().join(format!("f{index}.o")), "x").expect("writes");
+        }
+
+        assert_eq!(changed_paths(directory.path()).len(), 10);
     }
 }
