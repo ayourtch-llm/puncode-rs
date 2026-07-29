@@ -22,7 +22,8 @@ what was learned, what nearly went wrong, and what is still open. Read
 
 **When a scan will not save**
 
-- [Three save failures, three different causes](#three-save-failures-three-different-causes)
+- [The agent leaves files in the code it is scanning, and `--repeat` pays for it](#the-agent-leaves-files-in-the-code-it-is-scanning-and---repeat-pays-for-it)
+- [Four save failures, four different causes](#four-save-failures-four-different-causes)
 - [The agent can destroy its own scan by verifying a finding](#the-agent-can-destroy-its-own-scan-by-verifying-a-finding)
 - [Half a corpus run can be lost to a hand-written manifest](#half-a-corpus-run-can-be-lost-to-a-hand-written-manifest)
 - [What the sealed-manifest fix actually did: one of two](#what-the-sealed-manifest-fix-actually-did-one-of-two)
@@ -324,7 +325,39 @@ matching against an error string nobody here has ever seen.
 
 # When a scan will not save
 
-## Three save failures, three different causes
+## The agent leaves files in the code it is scanning, and `--repeat` pays for it
+
+Five repeats of one target through `scan --repeat 5`. All five produced
+`findings.json`, `coverage.json` and `report.md`. **Four failed to save**, and
+`--repeat` said so: *"4 of 5 runs did not finish cleanly: 1, 2, 3, 5"*.
+
+The cause is in the target:
+
+```
+$ git -C /tmp/mutant-scan/list-to-shell status --porcelain
+?? raw_candidates.jsonl
+```
+
+The agent wrote its candidate ledger **into the repository it was reading**,
+not into the output directory. That dirties the tree, so run 2 fails with
+"Working-tree contents changed" and runs 3 and 5 with "Scan target revision does
+not match the repository" — the tree no longer matches what the scan was
+registered against.
+
+So **repeated scanning of one target degrades**, and `--repeat` is exactly the
+feature that does it. The first run pollutes; the rest cannot save. Run one
+directory of output per run and a **fresh copy of the target per run**.
+
+`Cause::TargetMovedSinceRegistration` names it, and the CLI prints `git status`
+over the target for it as well as for the working-tree failure — the workbench
+can say the target moved and cannot say what moved.
+
+**It does not invalidate detection data**, and it does change how to describe it:
+the findings in those runs are on disk and complete, but they are partial output
+from scans the workbench never recorded. Say "what the model reported", not
+"recorded scans".
+
+## Four save failures, four different causes
 
 All three are reported by `scan` now, with evidence rather than only a
 diagnosis. They are easy to confuse and have nothing in common.
@@ -334,6 +367,7 @@ diagnosis. They are easy to confuse and have nothing in common.
 | `Repository HEAD changed` | a commit landed during the scan; the fixture runner's snapshot fixes it |
 | `Working-tree contents changed` | something wrote into the scanned tree — usually the agent compiling the code it is scanning |
 | `The sealed scan manifest changed while it was being published` | the manifest on disk is not what the plugin serialised; usually the agent wrote it by hand |
+| `Scan target revision does not match the repository` | the target is not what the scan was registered against — usually a previous scan left a file in it |
 
 The third reads like a race and is not one. `Cause::ManifestNotAsSerialised`
 says so, and the CLI runs `manifest_form` over the partial output it just kept

@@ -305,9 +305,15 @@ fn scan_once(options: &cli::ScanArgs) -> std::process::ExitCode {
                     eprintln!("puncode-security: {line}");
                 }
             }
-            if puncode_security::diagnosis::recognise(&problem)
-                == Some(puncode_security::diagnosis::Cause::WorkingTreeChanged)
-            {
+            // The same evidence answers both: something wrote into the target,
+            // and git can name it when the workbench cannot.
+            if matches!(
+                puncode_security::diagnosis::recognise(&problem),
+                Some(
+                    puncode_security::diagnosis::Cause::WorkingTreeChanged
+                        | puncode_security::diagnosis::Cause::TargetMovedSinceRegistration
+                )
+            ) {
                 let repository = options
                     .repository
                     .clone()

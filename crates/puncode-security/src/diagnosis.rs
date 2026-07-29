@@ -41,6 +41,8 @@ pub enum Cause {
     WorkingTreeChanged,
     /// The manifest on disk is not the one the plugin serialised.
     ManifestNotAsSerialised,
+    /// The target no longer matches what the scan was registered against.
+    TargetMovedSinceRegistration,
 }
 
 impl Cause {
@@ -86,6 +88,15 @@ impl Cause {
                  and the object files land in the tree it is scanning. Check for build output \
                  next to the source. Scan a copy of the repository rather than the working tree, \
                  or arrange for builds to write somewhere else."
+            }
+            Self::TargetMovedSinceRegistration => {
+                "The code being scanned is not what the scan was registered against, so the \
+                 workbench refused to record it. The usual cause is the previous scan: the agent \
+                 writes working files — a candidate ledger, a threat model — and some land in the \
+                 repository it is reading rather than in the output directory. The first scan then \
+                 leaves the tree dirty and every scan after it fails here, which is why this shows \
+                 up under --repeat and rarely on a single run. Check for stray files beside the \
+                 source, and scan a fresh copy for each run."
             }
             Self::ManifestNotAsSerialised => {
                 "The scan manifest on disk is not byte-for-byte what the plugin serialised, so \
@@ -158,6 +169,11 @@ pub fn recognise_from(text: &str, origin: Origin) -> Option<Cause> {
     // The workbench's own wording, which reads like a race and is not one.
     if lowered.contains("sealed scan manifest changed") {
         return Some(Cause::ManifestNotAsSerialised);
+    }
+    if lowered.contains("target revision does not match")
+        || lowered.contains("target snapshot does not match")
+    {
+        return Some(Cause::TargetMovedSinceRegistration);
     }
     if lowered.contains("system message must be at the beginning")
         || (lowered.contains("system message") && lowered.contains("only one"))
@@ -776,5 +792,55 @@ mod manifest_publication_tests {
                 "{other}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod target_moved_tests {
+    use super::*;
+
+    /// The message two runs of a five-run `--repeat` produced.
+    #[test]
+    fn recognises_the_message_repeat_runs_produced() {
+        assert_eq!(
+            recognise("Scan target revision does not match the repository."),
+            Some(Cause::TargetMovedSinceRegistration)
+        );
+    }
+
+    /// The explanation has to name the previous scan as the likely culprit.
+    /// Nobody edited the code; the agent left a file in it, and looking for a
+    /// colleague's commit is the wrong search.
+    #[test]
+    fn the_explanation_blames_the_previous_scan() {
+        let explanation = Cause::TargetMovedSinceRegistration.explanation();
+
+        assert!(explanation.contains("previous scan"), "{explanation}");
+        assert!(explanation.contains("--repeat"), "{explanation}");
+        assert!(explanation.contains("fresh copy"), "{explanation}");
+    }
+
+    /// Distinct from the other three save failures, which have different fixes.
+    #[test]
+    fn is_distinct_from_the_other_save_failures() {
+        for other in [
+            "Repository HEAD changed while the scan was running.",
+            "Working-tree contents changed while the scan was running.",
+            "The sealed scan manifest changed while it was being published.",
+        ] {
+            assert_ne!(
+                recognise(other),
+                Some(Cause::TargetMovedSinceRegistration),
+                "{other}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_not_read_out_of_command_output() {
+        assert_eq!(
+            recognise_from("Scan target revision does not match", Origin::CommandOutput),
+            None
+        );
     }
 }
