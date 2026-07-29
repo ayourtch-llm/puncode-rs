@@ -76,18 +76,38 @@ impl Cause {
     }
 }
 
+/// Where some text came from, which decides what it can be read as.
+///
+/// A security scan's own output discusses authentication, status codes and
+/// invalid keys, because that is what it is reviewing. Read as diagnostics,
+/// that vocabulary is indistinguishable from an endpoint refusing a request —
+/// so what a command printed is not read for endpoint failures at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// Something the scan itself reported as going wrong.
+    Failure,
+    /// Output of a command the agent ran. Its content is the repository's, not
+    /// the endpoint's.
+    CommandOutput,
+}
+
 /// The cause some text reveals, if it reveals one.
+///
+/// `origin` decides which causes are even considered; see [`Origin`].
 #[must_use]
-pub fn recognise(text: &str) -> Option<Cause> {
+pub fn recognise_from(text: &str, origin: Origin) -> Option<Cause> {
     let lowered = text.to_ascii_lowercase();
 
-    // Checked before the generic refusals below: a sandbox that will not start
-    // reports a permission problem that is not about credentials.
+    // A sandbox that will not start is reported by the command that could not
+    // run, so this is the one cause worth reading command output for.
     if lowered.contains("bwrap")
         || (lowered.contains("failed to make") && lowered.contains("slave"))
         || lowered.contains("sandbox could not be initialized")
     {
         return Some(Cause::SandboxUnavailable);
+    }
+    if origin == Origin::CommandOutput {
+        return None;
     }
     if lowered.contains("system message must be at the beginning")
         || (lowered.contains("system message") && lowered.contains("only one"))
@@ -109,9 +129,12 @@ pub fn recognise(text: &str) -> Option<Cause> {
     }
     if lowered.contains("invalid_api_key")
         || lowered.contains("incorrect api key")
-        || lowered.contains("unauthorized")
-        || lowered.contains("401")
-        || lowered.contains("403")
+        // Said as a status rather than as a bare number: "401" alone appears in
+        // hashes, paths and any discussion of HTTP.
+        || lowered.contains("status 401")
+        || lowered.contains("status 403")
+        || lowered.contains("401 unauthorized")
+        || lowered.contains("403 forbidden")
     {
         return Some(Cause::EndpointRejectedKey);
     }
@@ -122,6 +145,12 @@ pub fn recognise(text: &str) -> Option<Cause> {
         return Some(Cause::ModelNotServed);
     }
     None
+}
+
+/// The cause a reported failure reveals, if it reveals one.
+#[must_use]
+pub fn recognise(text: &str) -> Option<Cause> {
+    recognise_from(text, Origin::Failure)
 }
 
 /// Watches a scan for signs that something other than the model is at fault.
@@ -147,7 +176,7 @@ impl FailureWatch {
             | ThreadEvent::ItemCompleted { item } => {
                 let Some(item) = item else { return };
                 for value in item.fields.values() {
-                    self.read(value);
+                    self.read(value, Origin::CommandOutput);
                 }
             }
             ThreadEvent::TurnFailed { error } => {
@@ -166,6 +195,13 @@ impl FailureWatch {
         }
     }
 
+    /// Reads text whose origin decides how it may be interpreted.
+    fn note_from(&mut self, text: &str, origin: Origin) {
+        if let Some(cause) = recognise_from(text, origin) {
+            self.seen.insert(cause);
+        }
+    }
+
     /// Everything recognised, in a stable order.
     #[must_use]
     pub fn causes(&self) -> Vec<Cause> {
@@ -179,17 +215,17 @@ impl FailureWatch {
     }
 
     /// Reads any string a value contains, however deeply.
-    fn read(&mut self, value: &Value) {
+    fn read(&mut self, value: &Value, origin: Origin) {
         match value {
-            Value::String(text) => self.note(text),
+            Value::String(text) => self.note_from(text, origin),
             Value::Array(items) => {
                 for item in items {
-                    self.read(item);
+                    self.read(item, origin);
                 }
             }
             Value::Object(fields) => {
                 for field in fields.values() {
-                    self.read(field);
+                    self.read(field, origin);
                 }
             }
             _ => {}
@@ -304,6 +340,58 @@ mod tests {
         ] {
             assert_eq!(recognise(text), None, "{text}");
         }
+    }
+
+    /// A scan reviewing authentication code discusses exactly the vocabulary
+    /// these recognisers look for. Reading its findings as diagnostics told a
+    /// real run "the endpoint refused the credentials" when the endpoint had
+    /// answered every request and the save had failed on a schema mismatch.
+    #[test]
+    fn does_not_read_the_scans_own_security_analysis_as_a_failure() {
+        let mut watch = FailureWatch::new();
+
+        watch.observe(&ThreadEvent::ItemCompleted {
+            item: Some(item(json!({
+                "output": "The /admin route returns 401 Unauthorized without a session; \
+                           an invalid_api_key is rejected with 403 Forbidden.",
+            }))),
+        });
+
+        assert!(watch.causes().is_empty(), "{:?}", watch.causes());
+    }
+
+    /// The same words in a reported failure are still read, because there they
+    /// are the endpoint talking rather than the repository.
+    #[test]
+    fn still_reads_those_words_when_the_scan_itself_reports_them() {
+        let mut watch = FailureWatch::new();
+
+        watch.note(r#"{"error":{"code":"invalid_api_key"}}"#);
+
+        assert_eq!(watch.causes(), [Cause::EndpointRejectedKey]);
+    }
+
+    /// A bare status number appears in hashes and paths; it is not evidence.
+    #[test]
+    fn does_not_treat_a_bare_number_as_a_status() {
+        assert_eq!(recognise("digest sha256:9f401403ab and scope 401403"), None);
+        assert_eq!(
+            recognise("endpoint returned status 401"),
+            Some(Cause::EndpointRejectedKey)
+        );
+    }
+
+    /// A sandbox failure is reported by the command that could not run, so it
+    /// must still be recognised there.
+    #[test]
+    fn still_reads_a_sandbox_failure_from_command_output() {
+        let mut watch = FailureWatch::new();
+
+        watch.observe(&ThreadEvent::ItemCompleted {
+            item: Some(item(json!({ "output": "bwrap: permission denied" }))),
+        });
+
+        assert_eq!(watch.causes(), [Cause::SandboxUnavailable]);
     }
 
     /// The evidence arrives inside command output, which is a nested field.
