@@ -644,3 +644,59 @@ fn each_run_gets_its_own_secret() {
     assert_ne!(secret(&first), secret(&second));
     assert_eq!(secret(&first).len(), 32, "128 bits as hex");
 }
+
+/// A request that skips the reshaping is counted, not passed on in silence.
+///
+/// Silence is the bug here, not the limit. A body too large to hold should go
+/// on as it arrived rather than be buffered without bound — but if it does, the
+/// endpoint refuses it for exactly the reason the reshaping exists to prevent,
+/// and the remedy it suggests is the flag that was already given.
+#[test]
+fn counts_a_request_it_could_not_reshape() {
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let shim = EndpointShim::start(&recorder.base_url, &merging()).expect("starts");
+
+    // Not JSON at all, which is the cheap way to reach the same branch as a
+    // body too large to parse.
+    through(&shim, "this is not a JSON document");
+
+    assert_eq!(shim.unadapted_requests(), 1);
+}
+
+/// And a request that was reshaped is not counted, or the number means nothing.
+#[test]
+fn does_not_count_a_request_it_reshaped() {
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let shim = EndpointShim::start(&recorder.base_url, &merging()).expect("starts");
+
+    through(&shim, REQUEST);
+
+    assert_eq!(shim.unadapted_requests(), 0);
+}
+
+/// Nothing is counted when no reshaping was asked for: a request that was never
+/// meant to be adapted has not missed out on anything.
+#[test]
+fn counts_nothing_when_no_adaptation_was_asked_for() {
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let shim = EndpointShim::start(&recorder.base_url, &ShimOptions::default()).expect("starts");
+
+    through(&shim, "this is not a JSON document");
+
+    assert_eq!(shim.unadapted_requests(), 0);
+}
+
+/// The count is across the whole run, since a scan sends many requests and one
+/// slipping through is enough to explain a failure.
+#[test]
+fn counts_every_request_it_could_not_reshape() {
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let shim = EndpointShim::start(&recorder.base_url, &merging()).expect("starts");
+
+    for _ in 0..3 {
+        through(&shim, "not json");
+    }
+    through(&shim, REQUEST);
+
+    assert_eq!(shim.unadapted_requests(), 3);
+}

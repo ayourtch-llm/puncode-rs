@@ -421,6 +421,11 @@ pub fn run(
     // Read after the scan, not before: this reports on what the agent has
     // already been given, and doing it first would spend time on a repository
     // the scan might refuse anyway.
+    // Asked before the adapter is dropped. A request that skipped its
+    // reshaping explains a failure the endpoint's own message blames on
+    // something else.
+    let unadapted = adapter.as_ref().map_or(0, EndpointShim::unadapted_requests);
+
     let addressed = audit_target(&repository);
     // Against the code the agent just read. A finding pointing at a file that
     // is not there, or a line past the end of one, is the cheapest kind of
@@ -430,7 +435,7 @@ pub fn run(
 
     Ok(ScanOutcome {
         exit_code: exit_code(arguments, &result),
-        summary: summary(&result, &addressed, &anchors),
+        summary: summary(&result, &addressed, &anchors, unadapted),
         coverage_warning: coverage_warning(arguments, &result),
         report,
     })
@@ -487,7 +492,12 @@ fn exit_code(arguments: &ScanArgs, result: &ScanResult) -> u8 {
 }
 
 /// The lines describing what the scan did.
-fn summary(result: &ScanResult, addressed: &TargetAudit, anchors: &AnchorCheck) -> Vec<String> {
+fn summary(
+    result: &ScanResult,
+    addressed: &TargetAudit,
+    anchors: &AnchorCheck,
+    unadapted: usize,
+) -> Vec<String> {
     let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
     for finding in &result.findings.findings {
         *counts.entry(finding.severity.level.as_str()).or_default() += 1;
@@ -546,6 +556,18 @@ fn summary(result: &ScanResult, addressed: &TargetAudit, anchors: &AnchorCheck) 
                 anchors.unanchored.len() - SHOWN_PASSAGES
             ));
         }
+    }
+
+    // Rare enough that it has never happened in a real run here, and worth a
+    // line when it does: the endpoint will have refused those requests for the
+    // very reason --endpoint-compat exists to avoid, and will have suggested
+    // the flag that was already given.
+    if unadapted > 0 {
+        lines.push(format!(
+            "{unadapted} request(s) went to the endpoint without the reshaping --endpoint-compat \
+             asked for, because they were too large to hold or were not JSON. If the endpoint \
+             complained about system messages, that is why."
+        ));
     }
 
     if let Some(cost) = &result.cost {
@@ -659,7 +681,7 @@ mod addressed_text_tests {
             skipped_large_files: 0,
         };
 
-        let lines = summary(&clean_result(), &audit, &AnchorCheck::default());
+        let lines = summary(&clean_result(), &audit, &AnchorCheck::default(), 0);
 
         assert!(lines[0].starts_with("Findings: 0"), "{lines:?}");
         assert!(
@@ -678,6 +700,7 @@ mod addressed_text_tests {
             &clean_result(),
             &TargetAudit::default(),
             &AnchorCheck::default(),
+            0,
         );
 
         assert!(
@@ -704,7 +727,7 @@ mod addressed_text_tests {
             skipped_large_files: 0,
         };
 
-        let lines = summary(&clean_result(), &audit, &AnchorCheck::default());
+        let lines = summary(&clean_result(), &audit, &AnchorCheck::default(), 0);
 
         assert!(
             lines.iter().any(|line| line.contains("and 3 more")),
@@ -729,7 +752,7 @@ mod addressed_text_tests {
             without_locations: Vec::new(),
         };
 
-        let lines = summary(&clean_result(), &TargetAudit::default(), &anchors);
+        let lines = summary(&clean_result(), &TargetAudit::default(), &anchors, 0);
 
         assert!(lines[0].starts_with("Findings: 0"), "{lines:?}");
         assert!(
@@ -748,7 +771,7 @@ mod addressed_text_tests {
             ..AnchorCheck::default()
         };
 
-        let lines = summary(&clean_result(), &TargetAudit::default(), &anchors);
+        let lines = summary(&clean_result(), &TargetAudit::default(), &anchors, 0);
 
         assert!(
             !lines.iter().any(|line| line.contains("not there")),
@@ -778,7 +801,7 @@ mod addressed_text_tests {
             without_locations: Vec::new(),
         };
 
-        let lines = summary(&clean_result(), &addressed, &anchors);
+        let lines = summary(&clean_result(), &addressed, &anchors, 0);
 
         assert!(
             lines.iter().any(|line| line.contains("automated reader")),
@@ -843,5 +866,41 @@ mod addressed_text_tests {
         let directory = tempfile::tempdir().expect("a directory");
 
         assert!(manifest_evidence(directory.path()).is_empty());
+    }
+
+    /// Never seen in a real run, so the wording has to carry the reader from
+    /// the endpoint's complaint to the actual cause on its own.
+    #[test]
+    fn a_request_that_skipped_its_reshaping_is_reported() {
+        let lines = summary(
+            &clean_result(),
+            &TargetAudit::default(),
+            &AnchorCheck::default(),
+            2,
+        );
+
+        let line = lines
+            .iter()
+            .find(|line| line.contains("without the reshaping"))
+            .expect("the line");
+        assert!(line.starts_with("2 request(s)"), "{line}");
+        // The connection to what the endpoint will have said, which is the
+        // whole point: its message blames system messages.
+        assert!(line.contains("complained about system messages"), "{line}");
+    }
+
+    #[test]
+    fn says_nothing_when_every_request_was_reshaped() {
+        let lines = summary(
+            &clean_result(),
+            &TargetAudit::default(),
+            &AnchorCheck::default(),
+            0,
+        );
+
+        assert!(
+            !lines.iter().any(|line| line.contains("reshaping")),
+            "{lines:?}"
+        );
     }
 }

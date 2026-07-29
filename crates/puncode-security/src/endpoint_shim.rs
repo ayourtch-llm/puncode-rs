@@ -113,7 +113,7 @@ fn item_text(item: &Value) -> Vec<String> {
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::error::{Error, Result};
@@ -299,6 +299,14 @@ pub struct EndpointShim {
     /// owner.
     secret: String,
     running: Arc<AtomicBool>,
+    /// Requests that were meant to be reshaped and were not.
+    ///
+    /// A body too large to hold, or one that is not JSON, goes on as it
+    /// arrived. That is the right thing to do — buffering without bound is
+    /// worse — but doing it silently is not: the endpoint then refuses the
+    /// request for exactly the reason the adaptation exists to avoid, and the
+    /// remedy it suggests is the flag that was already given.
+    unadapted: Arc<AtomicUsize>,
 }
 
 impl EndpointShim {
@@ -327,6 +335,8 @@ impl EndpointShim {
         let secret = per_run_secret()?;
         let expected = secret.clone();
         let running = Arc::new(AtomicBool::new(true));
+        let unadapted = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&unadapted);
         let alive = Arc::clone(&running);
         std::thread::spawn(move || {
             for connection in listener.incoming() {
@@ -337,6 +347,7 @@ impl EndpointShim {
                 let upstream = upstream.clone();
                 let capture = capture.clone();
                 let expected = expected.clone();
+                let counted = Arc::clone(&counted);
                 // A scan runs several agents at once, so connections are served
                 // concurrently rather than one after another.
                 std::thread::spawn(move || {
@@ -346,6 +357,7 @@ impl EndpointShim {
                         &expected,
                         adaptations,
                         capture.as_deref(),
+                        &counted,
                     );
                 });
             }
@@ -355,7 +367,18 @@ impl EndpointShim {
             address,
             secret,
             running,
+            unadapted,
         })
+    }
+
+    /// How many requests went on without the reshaping they were meant to get.
+    ///
+    /// Zero on every scan seen so far. Worth asking anyway: when it is not
+    /// zero, the endpoint's complaint will point at the adaptation that was
+    /// asked for and did not happen.
+    #[must_use]
+    pub fn unadapted_requests(&self) -> usize {
+        self.unadapted.load(Ordering::SeqCst)
     }
 
     /// The address Codex should be pointed at.
@@ -407,6 +430,7 @@ fn serve_connection(
     secret: &str,
     adaptations: Adaptations,
     capture: Option<&Capture>,
+    unadapted: &AtomicUsize,
 ) -> std::io::Result<()> {
     let mut reader = BufReader::new(connection.try_clone()?);
 
@@ -452,14 +476,26 @@ fn serve_connection(
     reader.read_exact(&mut body)?;
 
     // Only a body small enough to hold is reshaped; anything larger goes on as
-    // it arrived rather than being buffered without bound.
-    if adaptations.any()
-        && body.len() <= MAX_ADAPTED_BODY
-        && let Ok(mut parsed) = serde_json::from_slice::<Value>(&body)
-    {
-        adapt_request(&mut parsed, adaptations);
-        if let Ok(rewritten) = serde_json::to_vec(&parsed) {
-            body = rewritten;
+    // it arrived rather than being buffered without bound. Counted when that
+    // happens, because a request that quietly skips the reshaping fails at the
+    // endpoint with the very error the reshaping prevents.
+    if adaptations.any() {
+        let reshaped = body.len() <= MAX_ADAPTED_BODY
+            && match serde_json::from_slice::<Value>(&body) {
+                Ok(mut parsed) => {
+                    adapt_request(&mut parsed, adaptations);
+                    match serde_json::to_vec(&parsed) {
+                        Ok(rewritten) => {
+                            body = rewritten;
+                            true
+                        }
+                        Err(_) => false,
+                    }
+                }
+                Err(_) => false,
+            };
+        if !reshaped {
+            unadapted.fetch_add(1, Ordering::SeqCst);
         }
     }
 

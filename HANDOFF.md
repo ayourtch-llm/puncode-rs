@@ -628,6 +628,27 @@ reaches a router. **That case is not evaluable with one endpoint that ignores
 the field**, so no recogniser was written for it — writing one would mean
 matching against an error string nobody here has ever seen.
 
+## The adapter could skip its work in silence
+
+`endpoint_shim.rs` reshapes each request when `--endpoint-compat` asks for it,
+and skipped the reshaping without a word for a body over 32 MB or one that does
+not parse as JSON. The limit is right — buffering without bound is worse — but
+the silence was not: such a request reaches the endpoint unadapted, is refused
+for the very reason the adaptation exists to prevent, and the endpoint's own
+message then recommends the flag that was already given.
+
+Counted now, and reported in the scan summary. **Zero on every real run seen
+here**, which is why it was found by auditing for a bug class rather than by
+anything failing.
+
+That class has cost this project three times — a silent 20 000-character
+truncation in the capture harness, a deferral list cut without saying so, a
+passage list the same. Worth grepping for periodically: `.take(`, `truncate`,
+`MAX_`, and asking of each whether the bound announces itself. The two other
+bounds found in that sweep are fine — a task id longer than 128 characters is
+shortened deterministically to a prefix plus a digest, which is a rename rather
+than a loss.
+
 ## Things measured and deliberately not built
 
 Worth recording so nobody spends a beat rediscovering them.
