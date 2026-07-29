@@ -146,6 +146,16 @@ reported as a missed vulnerability, because it might not be one.
 operators for other languages. The library is the bounded piece; the rest is a
 project, not a beat.
 
+**And an overclaim I made and withdrew.** The first version of the module doc
+said this "answers the question a fixture corpus cannot — is this scanner any
+good on my code". It does not. Every operator matches *literal lines* lifted
+from `inventory-service`, so on any other repository it fires only where that
+code happens to contain those lines verbatim. The technique generalises; this
+implementation does not. Making it general means matching idioms rather than
+text — parsing, not string comparison — and soundness is the whole difficulty
+there: an operator that guesses wrong produces a mutant that is not a flaw, and
+a corpus of those is worse than no corpus.
+
 ### First readings, 2026-07-29 18:22
 
 Three mutants scanned one after another, each a repository that is the control

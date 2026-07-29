@@ -10,9 +10,16 @@
 //! Mutation testing turns that around. Start from code that is safe, break one
 //! protection in a known way, and ask whether the scanner notices. The ground
 //! truth is true by construction: the difference between the two files *is* the
-//! flaw, and its location is exactly where the edit was made. Applied to a
-//! repository somebody actually cares about, it answers the question a fixture
-//! corpus cannot — is this scanner any good **on my code**.
+//! flaw, and its location is exactly where the edit was made.
+//!
+//! **How far that reaches, honestly.** The idea works on any codebase. What is
+//! implemented here does not: each operator matches *literal lines*, taken from
+//! `inventory-service`, and will fire on other code only where it happens to
+//! contain those lines verbatim. So this demonstrates the technique and
+//! measures this corpus; it does not yet measure anybody else's repository, and
+//! an earlier version of this comment said it did. Generalising means matching
+//! idioms rather than text, which means parsing rather than comparing strings —
+//! a different piece of work, and one where soundness is the whole difficulty.
 //!
 //! It also aims squarely at the one blind spot measurement here has found. The
 //! model follows a taint it can see and does not see an absence: `/admin/export`

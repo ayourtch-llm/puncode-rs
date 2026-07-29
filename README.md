@@ -427,14 +427,20 @@ finds all ten leaks — and against the corpus as it is now, on every test run.
 
 ## Making flaws on purpose
 
-Everything above measures the scanner against flaws somebody thought to plant.
-A corpus only contains what its author imagined, and a score against it says
-nothing about **your** code.
+Everything above measures the scanner against flaws somebody thought to plant,
+and a corpus only contains what its author imagined.
 
 Mutation testing inverts that. Take code that is safe, break one protection in a
 known way, and ask whether the scanner notices. The ground truth needs no
 judgement: the difference between the two files *is* the flaw, and its location
 is exactly where the edit was made.
+
+**What is implemented here demonstrates the technique on this corpus.** Each
+operator matches literal lines taken from `inventory-service`, so it will fire
+on other code only where that code happens to contain those lines verbatim.
+Pointing it at your own repository needs operators that match *idioms* rather
+than text — parsing rather than string comparison — which is not built. The
+paragraph you are reading replaced one that implied otherwise.
 
 ```sh
 cargo run -p puncode-security --example emit_mutants -- <file> <out-dir>
