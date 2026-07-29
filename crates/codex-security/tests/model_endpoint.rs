@@ -129,7 +129,8 @@ fn refuses_a_key_variable_that_is_not_a_variable_name() {
 /// What it produces has to survive the merge that actually configures Codex.
 #[test]
 fn survives_the_merge_into_the_real_configuration() {
-    let overrides = model_endpoint_overrides(&endpoint("http://198.51.100.10:8080/v1")).expect("ok");
+    let overrides =
+        model_endpoint_overrides(&endpoint("http://198.51.100.10:8080/v1")).expect("ok");
     let merged = merged_codex_config(&CodexSecurityConfig {
         codex_overrides: Some(overrides),
         ..CodexSecurityConfig::default()
