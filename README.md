@@ -132,7 +132,9 @@ puncode-security scan . --base-url ... --capture-traffic ./traffic.jsonl
 
 Records what was sent and what came back. The file holds prompts, model output
 and source excerpts from the repository, so it is written `0600`, refused inside
-the repository being scanned, and never created unless asked for.
+the repository being scanned, refused if the destination is a symbolic link, and
+never created unless asked for. A destination that already exists is tightened to
+`0600` rather than trusted to be private already.
 `--capture-max-bytes` raises the per-body cap (`0` removes it); a body that was
 cut short always says so.
 

@@ -167,8 +167,14 @@ struct Capture {
 
 impl Capture {
     /// Opens `path`, replacing anything already there.
+    ///
+    /// Refuses a symbolic link. Following one would write the prompts and the
+    /// source under review through to wherever it pointed, destroying whatever
+    /// was there — and the private mode below only applies to a file this
+    /// creates, so an existing target would keep permissions that let anyone
+    /// read it.
     fn open(path: &Path, limit: CaptureLimit) -> Result<Self> {
-        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
         let file = std::fs::OpenOptions::new()
             .write(true)
@@ -176,13 +182,48 @@ impl Capture {
             .truncate(true)
             // Readable only by its owner: this holds source under review.
             .mode(0o600)
+            .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
             .open(path)
             .map_err(|error| {
+                // O_NOFOLLOW reports a symbolic link as ELOOP, which reads as a
+                // loop of links rather than the refusal it is.
+                if error.raw_os_error() == Some(rustix::io::Errno::LOOP.raw_os_error()) {
+                    return Error::configuration(format!(
+                        "Traffic capture destination is a symbolic link: {}. It is refused \
+                         because following it would write prompts and source through to \
+                         wherever it points. Name a regular file.",
+                        path.display()
+                    ));
+                }
                 Error::configuration(format!(
                     "Could not open the traffic capture {}: {error}",
                     path.display()
                 ))
             })?;
+
+        // Tightened even when the file already existed, so the promise holds
+        // for a destination that was created some other way.
+        let metadata = file.metadata().map_err(|error| {
+            Error::configuration(format!(
+                "Could not inspect the traffic capture {}: {error}",
+                path.display()
+            ))
+        })?;
+        if !metadata.is_file() {
+            return Err(Error::configuration(format!(
+                "Traffic capture is not a regular file: {}",
+                path.display()
+            )));
+        }
+        if metadata.permissions().mode() & 0o777 != 0o600 {
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))
+                .map_err(|error| {
+                    Error::configuration(format!(
+                        "Could not make the traffic capture private {}: {error}",
+                        path.display()
+                    ))
+                })?;
+        }
         Ok(Self {
             file: Mutex::new(file),
             limit,

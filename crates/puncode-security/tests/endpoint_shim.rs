@@ -474,3 +474,63 @@ fn reports_the_limit_it_will_apply() {
     assert_eq!(CaptureLimit::Bytes(64).bytes(), Some(64));
     assert_eq!(CaptureLimit::Unlimited.bytes(), None);
 }
+
+/// Following a symbolic link would write the prompts and the source under
+/// review through to wherever it pointed, destroying what was there. It did,
+/// before this was fixed.
+#[test]
+fn refuses_a_capture_destination_that_is_a_symbolic_link() {
+    use std::os::unix::fs::symlink;
+
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let directory = tempfile::tempdir().expect("a directory");
+    let victim = directory.path().join("victim.txt");
+    std::fs::write(&victim, "important").expect("writes");
+    let link = directory.path().join("capture.jsonl");
+    symlink(&victim, &link).expect("links");
+
+    let refused = EndpointShim::start(
+        &recorder.base_url,
+        &ShimOptions {
+            adaptations: Adaptations::default(),
+            capture: Some(link),
+            capture_limit: CaptureLimit::Default,
+        },
+    );
+
+    let complaint = refused.err().expect("a refusal").to_string();
+    assert!(complaint.contains("symbolic link"), "{complaint}");
+    assert_eq!(
+        std::fs::read_to_string(&victim).expect("the victim survives"),
+        "important"
+    );
+}
+
+/// The private mode is only applied when a file is created, so a destination
+/// that already existed would keep permissions letting anyone read the prompts.
+#[test]
+fn tightens_a_capture_destination_that_was_already_readable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let recorder = Recorder::start(r#"{"ok":true}"#, "application/json");
+    let directory = tempfile::tempdir().expect("a directory");
+    let destination = directory.path().join("traffic.jsonl");
+    std::fs::write(&destination, "").expect("writes");
+    std::fs::set_permissions(&destination, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+
+    let _shim = EndpointShim::start(
+        &recorder.base_url,
+        &ShimOptions {
+            adaptations: Adaptations::default(),
+            capture: Some(destination.clone()),
+            capture_limit: CaptureLimit::Default,
+        },
+    )
+    .expect("starts");
+
+    let mode = std::fs::metadata(&destination)
+        .expect("the capture exists")
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600, "mode was {:o}", mode & 0o777);
+}
