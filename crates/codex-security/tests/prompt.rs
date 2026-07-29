@@ -43,6 +43,11 @@ fn fixture() -> Fixture {
 }
 
 /// A plugin directory with every scan skill installed.
+/// Whether a line is the port's deliberate addition to upstream's prompt.
+fn is_scope_extension(line: &str) -> bool {
+    line.starts_with("Use exactly [") && line.contains("scan.scope.")
+}
+
 fn plugin_root() -> (TempDir, PathBuf) {
     let temp = TempDir::new().expect("temp dir");
     let root = std::fs::canonicalize(temp.path()).expect("canonical");
@@ -110,6 +115,16 @@ fn builds_prompts_identically_to_the_typescript_implementation() {
             case.has_knowledge_base,
         )
         .expect("prompt builds");
+
+        // The port adds scope instructions upstream does not, because the
+        // workbench enforces a scope it never states and a weaker model guesses
+        // differently every run. Removing exactly those lines leaves what
+        // upstream produces, so every other divergence is still caught.
+        let actual: String = actual
+            .lines()
+            .filter(|line| !is_scope_extension(line))
+            .collect::<Vec<_>>()
+            .join("\n");
 
         if actual != case.prompt {
             let label = format!(
@@ -259,4 +274,72 @@ fn require_output_outside(repository: &Path, output: &Path) -> codex_security::E
         ProtectedScanPathKind::Output,
     )
     .expect_err("output inside the repository is refused")
+}
+
+/// The workbench refuses a save whose scope differs from what it registered,
+/// and nothing else tells the agent what that was. Observed across repeated
+/// runs of one unchanged scan: `["."]`, `["src"]`, `[]`, and `[".git/**"]` for
+/// a field that must be empty.
+#[test]
+fn states_the_scope_the_workbench_will_require() {
+    let target = NormalizedTarget {
+        kind: Some(NormalizedTargetKind::Repository),
+        ..NormalizedTarget::default()
+    };
+
+    let (_temp, root) = plugin_root();
+    let prompt = scan_prompt(&root, &target, ScanMode::Standard, false, false).expect("a prompt");
+
+    assert!(
+        prompt.contains(r#"Use exactly ["."] as scan.scope.includePaths"#),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("Use exactly [] as scan.scope.excludePaths"),
+        "{prompt}"
+    );
+}
+
+/// A paths scan is scoped to what was asked for, not to the whole repository.
+#[test]
+fn states_the_requested_paths_as_the_scope() {
+    let target = NormalizedTarget {
+        kind: Some(NormalizedTargetKind::Paths),
+        paths: vec!["src".to_owned(), "lib".to_owned()],
+        ..NormalizedTarget::default()
+    };
+
+    let (_temp, root) = plugin_root();
+    let prompt = scan_prompt(&root, &target, ScanMode::Standard, false, false).expect("a prompt");
+
+    assert!(
+        prompt.contains(r#"Use exactly ["src","lib"] as scan.scope.includePaths"#),
+        "{prompt}"
+    );
+}
+
+/// A diff-shaped scan has its scope checked differently, so stating one would
+/// invent a requirement the workbench does not make.
+#[test]
+fn says_nothing_about_scope_for_a_diff_scan() {
+    for kind in [
+        NormalizedTargetKind::Refs,
+        NormalizedTargetKind::WorkingTree,
+    ] {
+        let target = NormalizedTarget {
+            kind: Some(kind),
+            base: Some("main".to_owned()),
+            head: Some("HEAD".to_owned()),
+            ..NormalizedTarget::default()
+        };
+
+        let (_temp, root) = plugin_root();
+        let prompt =
+            scan_prompt(&root, &target, ScanMode::Standard, false, false).expect("a prompt");
+
+        assert!(
+            !prompt.contains("scan.scope.includePaths"),
+            "{kind:?}: {prompt}"
+        );
+    }
 }

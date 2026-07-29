@@ -65,6 +65,35 @@ pub fn target_instruction(target: &NormalizedTarget) -> String {
     }
 }
 
+/// What the workbench will require of `scan.scope`, said plainly.
+///
+/// Empty for a diff-shaped target: the workbench does not check `includePaths`
+/// there, so stating one would be inventing a requirement.
+fn scope_instructions(target: &NormalizedTarget) -> Vec<String> {
+    let include: Vec<String> = match target.kind {
+        // A paths scan is scoped to exactly what was asked for.
+        Some(NormalizedTargetKind::Paths) => target.paths.clone(),
+        Some(NormalizedTargetKind::Repository) | None => vec![".".to_owned()],
+        // Refs and working-tree scans run in diff mode, which is not checked.
+        Some(NormalizedTargetKind::Refs | NormalizedTargetKind::WorkingTree) => return Vec::new(),
+    };
+
+    let rendered = serde_json::to_string(&include).unwrap_or_else(|_| "[\".\"]".to_owned());
+    vec![
+        format!(
+            "Use exactly {rendered} as scan.scope.includePaths; do not add, remove or rewrite \
+             entries, and do not expand them to individual files."
+        ),
+        // Not a narrowing: the CLI has no way to request an exclusion, so the
+        // workbench has none registered and refuses any. A file that was
+        // genuinely skipped belongs in coverage.explicitExclusions, which
+        // carries a reason with it; this field would record it without one.
+        "Use exactly [] as scan.scope.excludePaths; the workbench requires it to be empty. \
+         Record anything genuinely skipped in coverage.explicitExclusions, with its reason."
+            .to_owned(),
+    ]
+}
+
 /// Builds the scan instruction, confirming the skill it names is installed.
 pub fn scan_prompt(
     plugin_root: &Path,
@@ -118,6 +147,16 @@ pub fn scan_prompt(
         ]
         .map(str::to_owned),
     );
+
+    // Not upstream. The workbench checks the manifest's scope against what it
+    // registered and refuses the save on any difference, but nothing tells the
+    // agent what it registered: `includePaths` and `excludePaths` are bare
+    // arrays in the schema with no description, and no reference explains them.
+    // A model that has to guess guesses differently each run — observed writing
+    // `["."]`, `["src"]` and `[]` for the same scan, and `[".git/**"]` for a
+    // field that must be empty. These are the values the workbench will demand,
+    // stated the same way the target ID already is.
+    lines.extend(scope_instructions(target));
 
     if has_config_path {
         lines.push(
