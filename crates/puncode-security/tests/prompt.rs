@@ -489,3 +489,87 @@ fn says_it_for_every_kind_of_target() {
         );
     }
 }
+
+/// The oracle checkout, when it is present.
+///
+/// Not in the repository — `/tmp` is ignored — so this is the one check here
+/// that cannot always run.
+fn upstream_api_ts() -> Option<String> {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp/codex-security/sdk/typescript/src/api.ts"),
+    )
+    .ok()
+}
+
+/// Whether the fixture still matches the TypeScript it was taken from.
+///
+/// Every other test here compares the port against `scan-prompts.json`. Nothing
+/// compared `scan-prompts.json` against upstream, so the fixture could go stale
+/// — upstream changes a sentence, the fixture keeps the old one, the port keeps
+/// matching the fixture, and the parity claim quietly stops meaning anything.
+///
+/// Checked by literal rather than by rebuilding the prompt: there is no Node on
+/// this host, so the TypeScript cannot be run. Every quoted string the prompt
+/// builder returns must appear verbatim in some case, which is weaker than
+/// executing it and strong enough to catch an edited sentence.
+#[test]
+fn the_oracle_fixture_still_matches_the_typescript() {
+    let Some(source) = upstream_api_ts() else {
+        // Said out loud. A test that quietly passes when it examined nothing is
+        // worse than one that fails.
+        eprintln!(
+            "SKIPPED the_oracle_fixture_still_matches_the_typescript: no oracle checkout at \
+             tmp/codex-security. The port is still compared against the fixture; nothing is \
+             comparing the fixture against upstream."
+        );
+        return;
+    };
+
+    let start = source
+        .find("  return [\n    `Use the installed")
+        .expect("the prompt builder");
+    let end = source[start..]
+        .find("  ].join(\"\\n\");")
+        .expect("the end of the prompt builder")
+        + start;
+    let block = &source[start..end];
+
+    let everything: String = fixture()
+        .cases
+        .iter()
+        .map(|case| case.prompt.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut missing = Vec::new();
+    for line in block.lines() {
+        let trimmed = line.trim().trim_start_matches("...").trim_end_matches(',');
+        let Some(literal) = quoted(trimmed) else {
+            continue;
+        };
+        // The one interpolated line is expanded per skill in the fixture, so it
+        // cannot match verbatim; its expansions are covered by other cases.
+        if literal.contains("${") || literal.len() < 20 {
+            continue;
+        }
+        if !everything.contains(&literal) {
+            missing.push(literal);
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "the fixture no longer matches upstream — {} line(s) changed:\n{}",
+        missing.len(),
+        missing.join("\n")
+    );
+}
+
+/// The contents of a single-, double- or back-quoted TypeScript literal.
+fn quoted(line: &str) -> Option<String> {
+    let quote = line.chars().next().filter(|c| "\"'`".contains(*c))?;
+    let rest = &line[quote.len_utf8()..];
+    let end = rest.rfind(quote)?;
+    Some(rest[..end].replace("\\\"", "\"").replace("\\'", "'"))
+}

@@ -109,6 +109,34 @@ digest logic, which would drift.
 - **Output may not live inside the scanned repository.** Fixtures live in this
   checkout, so the checkout is the protected root and results must go elsewhere.
 
+## Nothing was checking the oracle itself
+
+Every differential test compares the port against a fixture under
+`tests/fixtures/`. **Nothing compared those fixtures against upstream**, and
+nothing recorded how they were made. So the fixture could go stale — upstream
+edits a sentence, the fixture keeps the old one, the port keeps matching the
+fixture, and the parity claim quietly stops meaning anything.
+
+`the_oracle_fixture_still_matches_the_typescript` closes that for the prompt: it
+reads the prompt builder out of `tmp/codex-security/.../api.ts` and requires
+every quoted literal to appear verbatim in some case. Checked live — 16 of the
+17 literals match, and the 17th is the interpolated skill line, expanded per
+skill in the fixture. Editing one word of the fixture makes it fail, which was
+confirmed by editing one word.
+
+**There is no Node on this host**, so the TypeScript cannot be run and the
+fixtures cannot be regenerated. Comparing literals is weaker than executing the
+builder and is strong enough to catch an edited sentence. If Node ever is
+available, regenerating is better and this test should be replaced.
+
+`tmp/` is gitignored, so the check **skips when the oracle checkout is absent**
+— loudly, on stderr, saying exactly what is not being compared. A quiet skip
+would be the same silence it exists to remove.
+
+**The other oracle fixtures are still unchecked**: `config-projection.json`,
+`csv-parse.json`, `format-usd.json`, `scan-history.json`, `connection-failures.json`.
+Same shape of test would work for each.
+
 ## Extending the prompt
 
 `api/prompt.rs` carries two deliberate additions upstream does not have (scope,
