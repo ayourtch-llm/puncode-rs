@@ -1,9 +1,7 @@
 """A small inventory service.
 
-Several routines here resemble things that are often unsafe — a subprocess
-call, a path built from an argument, a hash, an interpolated query string — and
-each is written in the way that makes it safe. Nothing in this file is a
-vulnerability.
+Items are kept in SQLite, exported to CSV on request, and compressed on the
+way out.
 """
 import hashlib
 import os
@@ -12,10 +10,8 @@ import sqlite3
 import subprocess
 from dataclasses import dataclass
 
-# Where exports are written. A constant, not anything a caller supplies.
 EXPORT_ROOT = "/var/lib/inventory/exports"
 
-# A stock keeping unit is letters, digits and dashes, and nothing else.
 SKU_PATTERN = re.compile(r"\A[A-Za-z0-9-]{1,32}\Z")
 
 
@@ -45,10 +41,8 @@ def find_item(connection: sqlite3.Connection, sku: str) -> Item | None:
 def find_items(connection: sqlite3.Connection, skus: list[str]) -> list[Item]:
     """Looks several items up at once.
 
-    The query is built with an f-string, which is usually where SQL injection
-    comes from. Here the interpolated text is a run of placeholders derived from
-    how *many* arguments there are, never from what they contain, and every
-    value is still bound.
+    SQLite has no way to bind a list, so the query is built to carry one
+    placeholder per argument.
     """
     if not skus:
         return []
@@ -77,34 +71,19 @@ def adjust_quantity(connection: sqlite3.Connection, sku: str, delta: int) -> int
 
 
 def export_path(sku: str) -> str:
-    """The file an item's export is written to.
-
-    A path joined with an argument, which is where traversal usually comes
-    from. The argument is checked against a whitelist pattern first, so it
-    cannot contain a separator or a parent reference.
-    """
+    """The file an item's export is written to."""
     if not SKU_PATTERN.fullmatch(sku):
         raise ValueError("not a stock keeping unit")
     return os.path.join(EXPORT_ROOT, f"{sku}.csv")
 
 
 def compress_export(path: str) -> None:
-    """Compresses an export.
-
-    A subprocess call, which is where command injection usually comes from. The
-    arguments are a list and the program name is a literal, so no shell parses
-    any of it.
-    """
+    """Compresses an export in place."""
     subprocess.run(["gzip", "--force", path], check=True)
 
 
 def file_digest(path: str) -> str:
-    """A digest used to notice that an export changed on disk.
-
-    SHA-256 over file contents. This is integrity, not credential storage —
-    there is no password anywhere in this service — so a fast hash is the right
-    one and a password hash would be the wrong one.
-    """
+    """A digest used to notice that an export changed on disk."""
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for block in iter(lambda: handle.read(65536), b""):
@@ -113,9 +92,5 @@ def file_digest(path: str) -> str:
 
 
 def describe(item: Item) -> str:
-    """A line of prose about an item.
-
-    Interpolation into a string that is only ever printed. It reaches no
-    interpreter, no query and no shell.
-    """
+    """A line of prose about an item, for the operator log."""
     return f"{item.sku}: {item.name}, {item.quantity} in stock"

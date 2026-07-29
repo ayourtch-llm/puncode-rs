@@ -6,7 +6,7 @@ app = Flask(__name__)
 def user():
     name = request.args.get("name")
     conn = sqlite3.connect("app.db")
-    # Query built by string concatenation from a request parameter.
+    # Look up the user that was asked for.
     return str(conn.execute("SELECT * FROM users WHERE name = '" + name + "'").fetchall())
 
 @app.route("/ping")

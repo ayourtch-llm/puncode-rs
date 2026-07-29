@@ -1,5 +1,5 @@
 {
-  "note": "Ground truth for the fixture corpus. Kept outside fixtures/ on purpose: a scan reads its whole target, and a file listing the answers would turn detection into reading. Line numbers are where the flaw is expressed, not where it is reachable from. Fixtures may also carry decoys: code written to resemble something unsafe while being safe. An empty control only asks whether a scanner invents findings from nothing; decoys ask whether it is fooled by plausible code, which is where trust is actually lost. Every decoy records why it is safe, and the non-obvious ones were verified by running attacks against them rather than by reading.",
+  "note": "Ground truth for the fixture corpus. Kept outside fixtures/ on purpose: a scan reads its whole target, and a file listing the answers would turn detection into reading. That rule covers comments too, and it was broken for longer than the README was: c-memory named all three of its flaws in comments and clean-python's docstrings explained why each decoy was safe. Every result from before 2026-07-29 was measured with the answers in the source. Do not describe a flaw, a decoy, or the purpose of this corpus inside a fixture. Comments there should read like comments in code that was written to work. Line numbers are where the flaw is expressed, not where it is reachable from. Every decoy records why it is safe, and the non-obvious ones were verified by running attacks against them rather than by reading.",
   "fixtures": [
     {
       "name": "flask-injection",
@@ -116,14 +116,14 @@
       "language": "python",
       "flaws": [],
       "control": true,
-      "why": "Nothing is planted here, and several routines are written to resemble things that are usually unsafe. Anything reported against this fixture is a false positive, and that number decides whether the tool is worth running.",
+      "why": "Nothing is planted here, and several routines are written to resemble things that are usually unsafe. Anything reported against this fixture is a false positive, and that number decides whether the tool is worth running. The decoys carry no note saying they are safe: one that announces itself tests nothing.",
       "decoys": [
         {
           "id": "sql-placeholders-from-count",
           "file": "src/inventory.py",
           "lines": [
-            55,
-            57
+            49,
+            51
           ],
           "resembles": "CWE-89",
           "safe_because": "the f-string interpolates placeholders derived from the NUMBER of arguments, never their contents, and every value is still bound. Verified by running injection payloads through it: nothing matched and the table survived."
@@ -132,8 +132,8 @@
           "id": "path-join-validated",
           "file": "src/inventory.py",
           "lines": [
-            85,
-            88
+            75,
+            77
           ],
           "resembles": "CWE-22",
           "safe_because": "the argument is checked against \\A[A-Za-z0-9-]{1,32}\\Z before use, so it cannot hold a separator or a parent reference. Verified against traversal payloads: all refused."
@@ -142,8 +142,8 @@
           "id": "subprocess-list-no-shell",
           "file": "src/inventory.py",
           "lines": [
-            98,
-            98
+            82,
+            82
           ],
           "resembles": "CWE-78",
           "safe_because": "arguments are a list and the program is a literal, so no shell parses any of it."
@@ -152,8 +152,8 @@
           "id": "fast-hash-for-integrity",
           "file": "src/inventory.py",
           "lines": [
-            108,
-            112
+            87,
+            91
           ],
           "resembles": "CWE-916",
           "safe_because": "SHA-256 over file contents to notice a change on disk. There is no password anywhere in this service, so a password hash would be the wrong tool here, not the right one."
@@ -162,8 +162,8 @@
           "id": "interpolation-into-prose",
           "file": "src/inventory.py",
           "lines": [
-            120,
-            120
+            96,
+            96
           ],
           "resembles": "CWE-74",
           "safe_because": "the string is only ever printed; it reaches no interpreter, query or shell."

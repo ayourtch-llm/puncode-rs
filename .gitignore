@@ -6,3 +6,9 @@
 
 # Deploy key and push helper; never committed
 /.deploy/
+
+# Build output inside the fixtures. A scan reads its whole target, and a
+# stale .pyc is noise in a corpus that measures false positives.
+__pycache__/
+*.pyc
+fixtures/c-memory/store

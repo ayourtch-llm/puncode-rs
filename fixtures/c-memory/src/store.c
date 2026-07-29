@@ -1,6 +1,6 @@
-/* A key/value store with deliberate memory-safety bugs, for testing a scanner.
+/* A small in-memory key/value store with a command line front end.
  *
- * Nothing here should be copied into real code.
+ * Records are kept in a fixed table and looked up by name.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +16,7 @@ struct record {
 static struct record records[MAX_RECORDS];
 static int record_count = 0;
 
-/* Stack buffer overflow: the label is copied without checking its length. */
+/* Prints a one-line summary of a record for the operator log. */
 void describe_record(const char *label)
 {
     char summary[32];
@@ -24,15 +24,15 @@ void describe_record(const char *label)
     printf("record: %s\n", summary);
 }
 
-/* Use after free: the record is released but left in the table, so a later
- * lookup reads memory that has been returned to the allocator. */
+/* Removes a record from the store, releasing the memory it holds.
+ * Called when an entry is retired from the table. */
 void delete_record(const char *name)
 {
     for (int i = 0; i < record_count; i++) {
         if (strcmp(records[i].name, name) == 0) {
             free(records[i].name);
             free(records[i].value);
-            /* records[i] is never cleared and record_count never decreases. */
+
             return;
         }
     }
@@ -48,7 +48,7 @@ const char *lookup_record(const char *name)
     return NULL;
 }
 
-/* Off-by-one: the loop admits index MAX_RECORDS, one past the last slot. */
+/* Stores a copy of a name and value, refusing once the table is full. */
 int add_record(const char *name, const char *value)
 {
     if (record_count > MAX_RECORDS) {
@@ -69,7 +69,7 @@ int main(int argc, char **argv)
     add_record("greeting", "hello");
     describe_record(argv[1]);
     delete_record("greeting");
-    /* Reads freed memory. */
+
     printf("after delete: %s\n", lookup_record("greeting"));
     return 0;
 }
