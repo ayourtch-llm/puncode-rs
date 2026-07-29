@@ -190,6 +190,28 @@ Branches verified this way and known good: capture truncation reports the real
 size, `--min-agreement` announces how many it hid, `--repeat` names which runs
 failed, provenance is written per run under `--repeat`.
 
+## Running the corpus
+
+`./scripts/scan-fixtures.sh --local <url> --model <model> -- --dangerously-disable-sandbox`,
+then `puncode-security bench <results>`.
+
+Each fixture is copied to a scratch git repository and scanned there, not in
+this checkout. The fixtures live inside this repo, so a commit during a run
+moves HEAD and every scan is refused at the very end with "Repository HEAD
+changed while the scan was running" — after doing all the work. That cost a
+complete corpus run once. Do not undo the copy.
+
+Measured results, one model (deepreinforce-ai_Ornith-1.0-35B, local):
+
+| Date | Detection | False positives | Decoy trips |
+|---|---|---|---|
+| 2026-07-29 | 7 of 8 (88%) | 0 | — (no decoys yet) |
+| 2026-07-29 | 8 of 8 (100%) | 0 | 0 of 5 |
+
+The difference between those two is run-to-run variation on CWE-208, not
+improvement: the corpus did not change between them. With eight planted flaws
+one finding moves the rate by 12.5%, so treat a single run as weak evidence.
+
 ## Open
 
 1. **`report.md` finalisation is flaky.** Detection is reliable; the agent
