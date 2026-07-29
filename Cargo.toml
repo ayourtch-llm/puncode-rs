@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/codex-security", "crates/codex-security-cli"]
+members = ["crates/puncode-security", "crates/puncode-security-cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,7 +16,7 @@ signal-hook = "0.3"
 include_dir = "0.7"
 clap = { version = "4", features = ["derive", "wrap_help", "env"] }
 pdf-extract = "0.12"
-codex-security = { path = "crates/codex-security", version = "0.1.0" }
+puncode-security = { path = "crates/puncode-security", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 crc32fast = "1"

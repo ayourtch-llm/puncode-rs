@@ -1,0 +1,30 @@
+[package]
+name = "puncode-security-cli"
+description = "Command line interface for Codex Security scans"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "puncode-security"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+puncode-security = { workspace = true }
+dialoguer = { workspace = true }
+tempfile = { workspace = true }
+ureq = { workspace = true }
+serde_json = { workspace = true }
+signal-hook = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+rustix = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
