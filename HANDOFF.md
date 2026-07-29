@@ -109,6 +109,27 @@ digest logic, which would drift.
 - **Output may not live inside the scanned repository.** Fixtures live in this
   checkout, so the checkout is the protected root and results must go elsewhere.
 
+## export was checked only for what it refuses
+
+Every test in `cli/tests/export.rs` asserted a **refusal** — an overwritten
+artifact, a path outside the scan, a missing directory. Nothing asserted what
+the command produces, and the SARIF projection is a port of the plugin's, so the
+two could drift apart in silence.
+
+They have not. Our `--export-format sarif` is **byte-identical** to the
+`exports/results.sarif` the plugin itself finalised, across three real scans
+including the cross-file one. Pinned as a fixture (`tests/fixtures/plugin-sarif`,
+56 KB — a real scan directory, with the plugin's own SARIF beside it) and
+checked by editing one `ruleId` and watching the test fail.
+
+**I raised two false alarms getting there**, both from a comparison script
+rather than the code. SARIF messages carry the finding's *summary*, not its
+title, so matching on titles reported a missing result; and an absent `endLine`
+is equivalent to `endLine == startLine`, so treating them as different reported
+location mismatches. Neither was a defect. Comparing against `findings.json` was
+the wrong question anyway — `exports/results.sarif` is written by the plugin,
+so the question worth asking is whether *our* export matches *that*.
+
 ## consensus overstated agreement, and running it found out
 
 `consensus` had never been pointed at real scans in this session — only unit

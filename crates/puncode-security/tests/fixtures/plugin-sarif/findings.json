@@ -1,0 +1,298 @@
+{
+  "documentType": "codex-security.findings",
+  "findings": [
+    {
+      "attackPath": {
+        "change_conditions": "Replace strcpy with strncpy or snprintf with a bounded destination size, or validate input length before the copy.",
+        "dataflow": "argv[1] -> main -> describe_record(argv[1]) -> strcpy(summary, label) -> stack overflow",
+        "decision": "reportable",
+        "impact": "Stack corruption enabling potential code execution or crash; the Makefile explicitly disables hardening flags.",
+        "likelihood": "high",
+        "reachability": "The program is a CLI tool run locally; the user supplies argv[1] directly, making this trivially reachable.",
+        "severity": "high",
+        "severity_rationale": "Direct stack buffer overflow with attacker-controlled input on a trivially reachable entry path; the binary is built without hardening, increasing exploitability."
+      },
+      "codeEvidence": [
+        {
+          "code": "void describe_record(const char *label)\n{\n    char summary[32];\n    strcpy(summary, label);",
+          "endLine": 23,
+          "explanation": "Unbounded copy into a 32-byte stack buffer.",
+          "id": "evidence-describe-record-sink",
+          "label": "describe_record sink",
+          "path": "src/store.c",
+          "startLine": 21
+        },
+        {
+          "code": "describe_record(argv[1]);",
+          "explanation": "Untrusted command-line argument passed directly to the vulnerable function.",
+          "id": "evidence-main-entry",
+          "label": "main entrypoint",
+          "path": "src/store.c",
+          "startLine": 56
+        }
+      ],
+      "confidence": {
+        "level": "high",
+        "rationale": "The bug is deterministic and directly observable in the source code."
+      },
+      "findingId": "csf_223bb8c8b31c4c8d210a2487",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:23cc19d19d863f0c4e84cf525f1b470106f38706bea6972a2bf5e2f52e9ef503"
+      },
+      "identity": {
+        "anchor": "buffer-overflow-describe-record"
+      },
+      "locations": [
+        {
+          "endLine": 23,
+          "path": "src/store.c",
+          "role": "sink",
+          "startLine": 21
+        },
+        {
+          "path": "src/store.c",
+          "role": "entrypoint",
+          "startLine": 56
+        }
+      ],
+      "occurrenceId": "occ_075ca532636a690a8ace5dd8",
+      "preventiveControls": [
+        "Enforce input length validation at the entry boundary.",
+        "Prefer bounded copy functions (strncpy, snprintf) over unbounded ones (strcpy, strcat)."
+      ],
+      "provenance": {
+        "source": "codex-security-standard-scan"
+      },
+      "remediation": "Replace strcpy(summary, label) with snprintf(summary, sizeof(summary), \"%s\", label), or validate that strlen(label) < sizeof(summary) - 1 before the copy.",
+      "remediationTests": [
+        "Pass a label longer than 32 bytes as argv[1] and verify the program does not crash or corrupt the stack."
+      ],
+      "rootCause": {
+        "summary": "The function uses strcpy to copy an unbounded caller-supplied string into a fixed 32-byte stack buffer without validating the input length."
+      },
+      "ruleId": "cwe-120-unbounded-copy",
+      "severity": {
+        "level": "high"
+      },
+      "summary": "Stack buffer overflow via strcpy in describe_record(): a 32-byte local buffer receives an unchecked copy of the caller-supplied label, which originates from an untrusted command-line argument in main().",
+      "taxonomy": {
+        "category": "cwe-120-unbounded-copy",
+        "cwe": [
+          "CWE-120"
+        ]
+      },
+      "title": "Stack buffer overflow in describe_record()",
+      "validation": {
+        "confidence": "high",
+        "counterevidence_or_proof_gap": "None; the bug is structural and reproducible.",
+        "disposition": "reportable",
+        "evidence": "describe_record calls strcpy(summary, label) where summary is char[32] and label comes from main via argv[1].",
+        "method": "static analysis of unbounded strcpy into fixed-size stack buffer with attacker-controlled input",
+        "remaining_uncertainty": "None",
+        "rubric": "Unbounded copy of attacker-controlled input into a stack-allocated buffer on a program entry path"
+      }
+    },
+    {
+      "attackPath": {
+        "change_conditions": "Null the pointer and decrement record_count in delete_record, or skip already-freed entries in lookup_record.",
+        "dataflow": "main -> delete_record(\"greeting\") -> free(records[0].value) -> main -> lookup_record(\"greeting\") -> return records[0].value (dangling)",
+        "decision": "reportable",
+        "impact": "Reading freed heap memory; may disclose previously stored data or, in conjunction with other bugs, enable heap manipulation.",
+        "likelihood": "high",
+        "reachability": "Fully reachable: main unconditionally calls delete_record then lookup_record for the same key.",
+        "severity": "medium",
+        "severity_rationale": "The UAF is deterministic and fully reachable but the direct impact is limited to reading freed memory; exploitation requires heap state control which is harder to achieve."
+      },
+      "codeEvidence": [
+        {
+          "code": "void delete_record(const char *name)\n{\n    for (int i = 0; i < record_count; i++) {\n        if (strcmp(records[i].name, name) == 0) {\n            free(records[i].name);\n            free(records[i].value);\n            return;\n        }\n    }\n}",
+          "endLine": 36,
+          "explanation": "Frees memory without nulling pointers or decrementing record_count.",
+          "id": "evidence-delete-record-free",
+          "label": "delete_record free",
+          "path": "src/store.c",
+          "startLine": 29
+        },
+        {
+          "code": "const char *lookup_record(const char *name)\n{\n    for (int i = 0; i < record_count; i++) {\n        if (strcmp(records[i].name, name) == 0) {\n            return records[i].value;\n        }\n    }\n    return NULL;\n}",
+          "endLine": 44,
+          "explanation": "Returns the stale pointer without checking if it was freed.",
+          "id": "evidence-lookup-record-dangling",
+          "label": "lookup_record dangling read",
+          "path": "src/store.c",
+          "startLine": 38
+        },
+        {
+          "code": "printf(\"after delete: %s\\n\", lookup_record(\"greeting\"));",
+          "explanation": "Calls lookup_record immediately after delete_record on the same key.",
+          "id": "evidence-main-uaf-call",
+          "label": "main UAF call site",
+          "path": "src/store.c",
+          "startLine": 57
+        }
+      ],
+      "confidence": {
+        "level": "high",
+        "rationale": "The bug is deterministic and directly observable in the source code."
+      },
+      "findingId": "csf_a67250ec762828954d5d6ed7",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:4455aa8f52dd55f01af71c3cf309da20b9b5c013dce1b62402bc388ab4b1e2b2"
+      },
+      "identity": {
+        "anchor": "use-after-free-lookup-record"
+      },
+      "locations": [
+        {
+          "endLine": 36,
+          "path": "src/store.c",
+          "role": "sink",
+          "startLine": 29
+        },
+        {
+          "endLine": 44,
+          "path": "src/store.c",
+          "role": "concrete_implementation",
+          "startLine": 38
+        },
+        {
+          "path": "src/store.c",
+          "role": "entrypoint",
+          "startLine": 57
+        }
+      ],
+      "occurrenceId": "occ_086e9bbbfc98c3c0f28528c0",
+      "preventiveControls": [
+        "Always null pointers after free.",
+        "Use AddressSanitizer to detect UAF at runtime."
+      ],
+      "provenance": {
+        "source": "codex-security-standard-scan"
+      },
+      "remediation": "In delete_record(), set records[i].name = NULL and records[i].value = NULL after freeing, and decrement record_count (or use a deleted flag). In lookup_record(), skip entries where the value pointer is NULL.",
+      "remediationTests": [
+        "Call add_record followed by delete_record, then lookup_record for the deleted key and verify it returns NULL rather than accessing freed memory."
+      ],
+      "rootCause": {
+        "summary": "delete_record() frees the record's value and name pointers without nulling them or decrementing record_count, so subsequent lookups return dangling pointers."
+      },
+      "ruleId": "cwe-416-dangling-pointer",
+      "severity": {
+        "level": "medium"
+      },
+      "summary": "Use-after-free via dangling pointer: delete_record frees records[i].value but leaves the pointer field and record_count unchanged, so lookup_record returns freed memory for the deleted entry.",
+      "taxonomy": {
+        "category": "cwe-416-dangling-pointer",
+        "cwe": [
+          "CWE-416"
+        ]
+      },
+      "title": "Use-after-free via dangling pointer in lookup_record()",
+      "validation": {
+        "confidence": "high",
+        "counterevidence_or_proof_gap": "None; the dangling pointer is never checked.",
+        "disposition": "reportable",
+        "evidence": "delete_record calls free(records[i].value) at line 33; lookup_record at line 42 returns records[i].value which is now dangling.",
+        "method": "Code review of delete_record followed by lookup_record in main",
+        "remaining_uncertainty": "The freed memory may or may not still be mapped depending on allocator behavior, but the dereference is still a UAF.",
+        "rubric": "Use of memory freed by delete_record via lookup_record returning the stale pointer"
+      }
+    },
+    {
+      "attackPath": {
+        "change_conditions": "Change the guard to `record_count >= MAX_RECORDS`.",
+        "dataflow": "add_record(name, value) -> records[record_count] (index 16) -> writes past end of records array",
+        "decision": "reportable",
+        "impact": "Out-of-bounds write past the records array; may corrupt adjacent stack/heap data or enable heap-based exploitation. The Makefile confirms this flaw is intentional and exploitable.",
+        "likelihood": "high",
+        "reachability": "Reachable when record_count reaches 16; requires 16 successful add_record calls. The add_record function is public and callable from any code path.",
+        "severity": "high",
+        "severity_rationale": "Out-of-bounds write with attacker-controlled data (name and value) past a fixed-size array; combined with the Makefile's explicit 'no hardening' intent, this is reliably exploitable for heap corruption."
+      },
+      "codeEvidence": [
+        {
+          "code": "int add_record(const char *name, const char *value)\n{\n    if (record_count > MAX_RECORDS) {\n        return -1;\n    }\n    records[record_count].name = strdup(name);\n    records[record_count].value = strdup(value);\n    record_count++;\n    return 0;\n}",
+          "endLine": 53,
+          "explanation": "The > guard allows record_count==MAX_RECORDS (16) to proceed, writing past the end of the 16-element array.",
+          "id": "evidence-add-record-bound",
+          "label": "add_record bounds check",
+          "path": "src/store.c",
+          "startLine": 48
+        },
+        {
+          "code": "add_record(\"greeting\", \"hello\");",
+          "explanation": "Entry point calling the vulnerable function.",
+          "id": "evidence-main-add-entry",
+          "label": "main add_record entry",
+          "path": "src/store.c",
+          "startLine": 56
+        }
+      ],
+      "confidence": {
+        "level": "high",
+        "rationale": "The bug is deterministic and directly observable in the source code."
+      },
+      "findingId": "csf_0b1f4704ec77c3d35d1fd798",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:b39313dc8796bbb40c7d622808ac956ef7841f7a8008e15b6e3e48a315c56de9"
+      },
+      "identity": {
+        "anchor": "off-by-one-add-record"
+      },
+      "locations": [
+        {
+          "endLine": 53,
+          "path": "src/store.c",
+          "role": "sink",
+          "startLine": 48
+        },
+        {
+          "path": "src/store.c",
+          "role": "entrypoint",
+          "startLine": 56
+        }
+      ],
+      "occurrenceId": "occ_6787b779b6cae7785c623016",
+      "preventiveControls": [
+        "Use ARRAY_SIZE() macros or dynamic allocation for the record table.",
+        "Add AddressSanitizer to CI to catch off-by-one errors."
+      ],
+      "provenance": {
+        "source": "codex-security-standard-scan"
+      },
+      "remediation": "Change `if (record_count > MAX_RECORDS)` to `if (record_count >= MAX_RECORDS)`.",
+      "remediationTests": [
+        "Insert 16 records successfully, then attempt a 17th and verify it returns -1 without writing to out-of-bounds memory. Run with AddressSanitizer to confirm no overflow."
+      ],
+      "rootCause": {
+        "summary": "The bounds check uses `>` instead of `>=`, allowing record_count to reach MAX_RECORDS (16) and writing at index 16, which is past the end of the 16-element static array."
+      },
+      "ruleId": "cwe-787-out-of-bounds-write",
+      "severity": {
+        "level": "high"
+      },
+      "summary": "Off-by-one buffer overflow in add_record(): the guard uses record_count > MAX_RECORDS instead of >=, allowing insertion at index 16 when the table holds 16 records, writing past the end of the fixed-size array.",
+      "taxonomy": {
+        "category": "cwe-787-out-of-bounds-write",
+        "cwe": [
+          "CWE-787"
+        ]
+      },
+      "title": "Off-by-one buffer overflow in add_record()",
+      "validation": {
+        "confidence": "high",
+        "counterevidence_or_proof_gap": "None; the condition is unambiguously incorrect.",
+        "disposition": "reportable",
+        "evidence": "static struct record records[MAX_RECORDS] declares 16 elements; if (record_count > MAX_RECORDS) allows record_count==16 to proceed and writes records[16].",
+        "method": "Static analysis of bounds check in add_record against the array declaration",
+        "remaining_uncertainty": "The practical impact depends on what follows the array in memory, but the write itself is an out-of-bounds access.",
+        "rubric": "Off-by-one error in array bounds check permitting out-of-bounds write"
+      }
+    }
+  ],
+  "scanId": "5eb2fa58-5ec8-4f87-9263-4776ffb23165",
+  "schemaVersion": "1.0"
+}

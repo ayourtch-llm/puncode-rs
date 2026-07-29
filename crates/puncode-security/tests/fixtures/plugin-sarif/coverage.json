@@ -1,0 +1,34 @@
+{
+  "completeness": "complete",
+  "deferred": [],
+  "documentType": "codex-security.coverage",
+  "excludePaths": [],
+  "explicitExclusions": [],
+  "includePaths": [
+    "."
+  ],
+  "inventoryStrategy": "repository",
+  "mode": "repository",
+  "scanId": "5eb2fa58-5ec8-4f87-9263-4776ffb23165",
+  "schemaVersion": "1.0",
+  "surfaces": [
+    {
+      "disposition": "reported",
+      "id": "src/store.c",
+      "label": "src/store.c",
+      "notes": "Three findings: stack buffer overflow in describe_record, use-after-free via dangling pointer in lookup_record, off-by-one buffer overflow in add_record.",
+      "receiptRefs": [
+        "artifacts/02_discovery/candidate_ledger.jsonl"
+      ],
+      "riskArea": "CWE-120, CWE-416, CWE-787"
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "Makefile",
+      "label": "Makefile",
+      "notes": "Build file that explicitly disables hardening flags; not a vulnerability source itself but amplifies exploitability of store.c flaws.",
+      "receiptRefs": [],
+      "riskArea": "Build configuration"
+    }
+  ]
+}

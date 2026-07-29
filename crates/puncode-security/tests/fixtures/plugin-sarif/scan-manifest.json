@@ -1,0 +1,49 @@
+{
+  "documentType": "codex-security.scan-manifest",
+  "scan": {
+    "artifacts": [
+      {
+        "mediaType": "application/json",
+        "path": "findings.json",
+        "sha256": "c92f14e35d674dd860164f83f98dd5c48892c1c58fcc800876e556f7a710fd13"
+      },
+      {
+        "mediaType": "application/json",
+        "path": "coverage.json",
+        "sha256": "670a8590d8ff057d4dc4e8514883893549485af2937dee2187241e4c549af716"
+      },
+      {
+        "mediaType": "application/octet-stream",
+        "path": "artifacts/02_discovery/candidate_ledger.jsonl",
+        "sha256": "c52b7fc6766cb0a9ba3f9f41f482675694a3f1170aeb677bba4fc446d22336eb"
+      }
+    ],
+    "completedAt": "2026-07-29T16:17:20.223121Z",
+    "coverageRef": "coverage.json",
+    "findingsRef": "findings.json",
+    "id": "5eb2fa58-5ec8-4f87-9263-4776ffb23165",
+    "producer": {
+      "name": "codex-security-plugin",
+      "version": "0.1.14"
+    },
+    "scope": {
+      "excludePaths": [],
+      "includePaths": [
+        "."
+      ]
+    },
+    "sealedAt": "2026-07-29T16:17:20.223121Z",
+    "startedAt": "2026-07-29T16:13:41.445Z",
+    "status": "completed",
+    "target": {
+      "displayName": "c-memory.src",
+      "kind": "git_revision",
+      "revision": "4085feb2258aeacf498b2f3cdaef208e4c925155",
+      "targetId": "target_sha256_5a50ce593a9ab6536945fb3a77bcff77dfec4807aa796dee0f3bc95909d6d699"
+    },
+    "threatModel": {
+      "summary": "In-memory key/value store with CLI front end; local attacker with shell access can trigger stack buffer overflow, use-after-free, and off-by-one buffer overflow via untrusted command-line arguments."
+    }
+  },
+  "schemaVersion": "1.0"
+}

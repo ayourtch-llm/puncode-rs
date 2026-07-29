@@ -1,0 +1,219 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "5eb2fa58-5ec8-4f87-9263-4776ffb23165"
+      },
+      "properties": {
+        "codexSecuritySchemaVersion": "1.0",
+        "codexSecurityTargetKind": "git_revision"
+      },
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/store.c"
+                },
+                "region": {
+                  "endLine": 23,
+                  "startLine": 21
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/store.c"
+                },
+                "region": {
+                  "endLine": 56,
+                  "startLine": 56
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Stack buffer overflow via strcpy in describe_record(): a 32-byte local buffer receives an unchecked copy of the caller-supplied label, which originates from an untrusted command-line argument in main()."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:23cc19d19d863f0c4e84cf525f1b470106f38706bea6972a2bf5e2f52e9ef503"
+          },
+          "properties": {
+            "category": "cwe-120-unbounded-copy",
+            "confidence": "high",
+            "findingId": "csf_223bb8c8b31c4c8d210a2487",
+            "occurrenceId": "occ_075ca532636a690a8ace5dd8",
+            "severity": "high"
+          },
+          "ruleId": "cwe-120-unbounded-copy",
+          "ruleIndex": 0
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/store.c"
+                },
+                "region": {
+                  "endLine": 36,
+                  "startLine": 29
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "concrete_implementation"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/store.c"
+                },
+                "region": {
+                  "endLine": 44,
+                  "startLine": 38
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/store.c"
+                },
+                "region": {
+                  "endLine": 57,
+                  "startLine": 57
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Use-after-free via dangling pointer: delete_record frees records[i].value but leaves the pointer field and record_count unchanged, so lookup_record returns freed memory for the deleted entry."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:4455aa8f52dd55f01af71c3cf309da20b9b5c013dce1b62402bc388ab4b1e2b2"
+          },
+          "properties": {
+            "category": "cwe-416-dangling-pointer",
+            "confidence": "high",
+            "findingId": "csf_a67250ec762828954d5d6ed7",
+            "occurrenceId": "occ_086e9bbbfc98c3c0f28528c0",
+            "severity": "medium"
+          },
+          "ruleId": "cwe-416-dangling-pointer",
+          "ruleIndex": 1
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/store.c"
+                },
+                "region": {
+                  "endLine": 53,
+                  "startLine": 48
+                }
+              }
+            },
+            {
+              "message": {
+                "text": "entrypoint"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/store.c"
+                },
+                "region": {
+                  "endLine": 56,
+                  "startLine": 56
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Off-by-one buffer overflow in add_record(): the guard uses record_count > MAX_RECORDS instead of >=, allowing insertion at index 16 when the table holds 16 records, writing past the end of the fixed-size array."
+          },
+          "partialFingerprints": {
+            "codexSecurity/v1": "codex-security/v1:sha256:b39313dc8796bbb40c7d622808ac956ef7841f7a8008e15b6e3e48a315c56de9"
+          },
+          "properties": {
+            "category": "cwe-787-out-of-bounds-write",
+            "confidence": "high",
+            "findingId": "csf_0b1f4704ec77c3d35d1fd798",
+            "occurrenceId": "occ_6787b779b6cae7785c623016",
+            "severity": "high"
+          },
+          "ruleId": "cwe-787-out-of-bounds-write",
+          "ruleIndex": 2
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Codex Security",
+          "rules": [
+            {
+              "id": "cwe-120-unbounded-copy",
+              "name": "cwe-120-unbounded-copy",
+              "properties": {
+                "tags": [
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "cwe-120-unbounded-copy"
+              }
+            },
+            {
+              "id": "cwe-416-dangling-pointer",
+              "name": "cwe-416-dangling-pointer",
+              "properties": {
+                "tags": [
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "cwe-416-dangling-pointer"
+              }
+            },
+            {
+              "id": "cwe-787-out-of-bounds-write",
+              "name": "cwe-787-out-of-bounds-write",
+              "properties": {
+                "tags": [
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "cwe-787-out-of-bounds-write"
+              }
+            }
+          ],
+          "version": "0.1.14"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

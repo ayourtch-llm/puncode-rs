@@ -180,3 +180,99 @@ fn allows_the_scans_own_export_location() {
         "{stderr}"
     );
 }
+
+/// A real scan directory, with the SARIF the plugin itself wrote.
+///
+/// Every other test in this file checks that `export` refuses something. None
+/// checked what it produces, and the SARIF projection is a port of the
+/// plugin's — so the two could drift apart and nothing would notice.
+fn plugin_written_scan() -> (TempDir, PathBuf) {
+    let source = fixtures().join("plugin-sarif");
+    let temp = TempDir::new().expect("temp dir");
+    let scan = temp.path().join("scan");
+    copy_tree(&source, &scan);
+    (temp, scan)
+}
+
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).expect("creates");
+    for entry in std::fs::read_dir(from).expect("reads").flatten() {
+        let target = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).expect("copies");
+        }
+    }
+}
+
+/// What this command produces is what the plugin produces.
+///
+/// Checked against a scan the plugin actually finalised, not against a shape
+/// invented here. Confirmed byte-identical across three real scans before being
+/// pinned as a fixture.
+#[test]
+fn the_sarif_export_matches_the_one_the_plugin_wrote() {
+    let (_temp, scan) = plugin_written_scan();
+    let theirs: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(scan.join("exports/results.sarif")).expect("the plugin's SARIF"),
+    )
+    .expect("valid JSON");
+    let output = scan.parent().expect("a parent").join("ours.sarif");
+
+    let (code, _, stderr) = run(&[
+        "export",
+        &scan.to_string_lossy(),
+        "--export-format",
+        "sarif",
+        "--output",
+        &output.to_string_lossy(),
+    ]);
+
+    assert_eq!(code, Some(0), "{stderr}");
+    let ours: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&output).expect("our SARIF"))
+            .expect("valid JSON");
+    assert_eq!(
+        ours, theirs,
+        "the SARIF projection has drifted from the plugin's"
+    );
+}
+
+/// And it says what a SARIF consumer needs, rather than merely parsing.
+#[test]
+fn the_sarif_export_carries_what_a_consumer_reads() {
+    let (_temp, scan) = plugin_written_scan();
+    let findings: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(scan.join("findings.json")).expect("findings"),
+    )
+    .expect("valid JSON");
+    let expected = findings["findings"].as_array().expect("findings").len();
+    let output = scan.parent().expect("a parent").join("ours.sarif");
+
+    run(&[
+        "export",
+        &scan.to_string_lossy(),
+        "--export-format",
+        "sarif",
+        "--output",
+        &output.to_string_lossy(),
+    ]);
+
+    let sarif: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&output).expect("our SARIF"))
+            .expect("valid JSON");
+    assert_eq!(sarif["version"], "2.1.0");
+    let run_zero = &sarif["runs"][0];
+    assert_eq!(
+        run_zero["results"].as_array().expect("results").len(),
+        expected,
+        "every finding must reach the export"
+    );
+    // A result nobody can open is not a result.
+    for result in run_zero["results"].as_array().expect("results") {
+        let location = &result["locations"][0]["physicalLocation"];
+        assert!(location["artifactLocation"]["uri"].is_string(), "{result}");
+        assert!(location["region"]["startLine"].is_number(), "{result}");
+    }
+}
