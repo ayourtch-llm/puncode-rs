@@ -390,6 +390,11 @@ pub fn run(
         .repository
         .clone()
         .unwrap_or_else(|| current_directory.to_path_buf());
+    // What the repository already had outstanding, so the comparison afterwards
+    // reports what *this scan* left rather than the user's own work in progress.
+    // A bare "the target is dirty" would be noise on any real checkout.
+    let before = puncode_security::diagnosis::changed_paths(&repository);
+
     // Requests are adapted by a forwarder on this machine; the scan is pointed
     // at it instead of the endpoint. It is held for the whole scan and shuts
     // down when this returns.
@@ -426,6 +431,16 @@ pub fn run(
     // something else.
     let unadapted = adapter.as_ref().map_or(0, EndpointShim::unadapted_requests);
 
+    // Observed in 2 of 25 scans here: the agent writes a working file — a
+    // candidate ledger, a compiled binary from checking a memory-safety
+    // finding — into the code it is reading. Both times the scan then failed to
+    // save, and either way it is a change to somebody's working tree that they
+    // did not ask for.
+    let left_behind: Vec<String> = puncode_security::diagnosis::changed_paths(&repository)
+        .into_iter()
+        .filter(|path| !before.contains(path))
+        .collect();
+
     let addressed = audit_target(&repository);
     // Against the code the agent just read. A finding pointing at a file that
     // is not there, or a line past the end of one, is the cheapest kind of
@@ -435,7 +450,7 @@ pub fn run(
 
     Ok(ScanOutcome {
         exit_code: exit_code(arguments, &result),
-        summary: summary(&result, &addressed, &anchors, unadapted),
+        summary: summary(&result, &addressed, &anchors, unadapted, &left_behind),
         coverage_warning: coverage_warning(arguments, &result),
         report,
     })
@@ -497,6 +512,7 @@ fn summary(
     addressed: &TargetAudit,
     anchors: &AnchorCheck,
     unadapted: usize,
+    left_behind: &[String],
 ) -> Vec<String> {
     let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
     for finding in &result.findings.findings {
@@ -568,6 +584,24 @@ fn summary(
              asked for, because they were too large to hold or were not JSON. If the endpoint \
              complained about system messages, that is why."
         ));
+    }
+
+    if !left_behind.is_empty() {
+        lines.push(
+            "The scan left files in the code it was reading. They are not yours, and a later scan \
+             of this repository will be refused because the target no longer matches what it was \
+             registered against."
+                .to_owned(),
+        );
+        for path in left_behind.iter().take(SHOWN_PASSAGES) {
+            lines.push(format!("  {path}"));
+        }
+        if left_behind.len() > SHOWN_PASSAGES {
+            lines.push(format!(
+                "  ... and {} more",
+                left_behind.len() - SHOWN_PASSAGES
+            ));
+        }
     }
 
     if let Some(cost) = &result.cost {
@@ -681,7 +715,7 @@ mod addressed_text_tests {
             skipped_large_files: 0,
         };
 
-        let lines = summary(&clean_result(), &audit, &AnchorCheck::default(), 0);
+        let lines = summary(&clean_result(), &audit, &AnchorCheck::default(), 0, &[]);
 
         assert!(lines[0].starts_with("Findings: 0"), "{lines:?}");
         assert!(
@@ -701,6 +735,7 @@ mod addressed_text_tests {
             &TargetAudit::default(),
             &AnchorCheck::default(),
             0,
+            &[],
         );
 
         assert!(
@@ -727,7 +762,7 @@ mod addressed_text_tests {
             skipped_large_files: 0,
         };
 
-        let lines = summary(&clean_result(), &audit, &AnchorCheck::default(), 0);
+        let lines = summary(&clean_result(), &audit, &AnchorCheck::default(), 0, &[]);
 
         assert!(
             lines.iter().any(|line| line.contains("and 3 more")),
@@ -752,7 +787,7 @@ mod addressed_text_tests {
             without_locations: Vec::new(),
         };
 
-        let lines = summary(&clean_result(), &TargetAudit::default(), &anchors, 0);
+        let lines = summary(&clean_result(), &TargetAudit::default(), &anchors, 0, &[]);
 
         assert!(lines[0].starts_with("Findings: 0"), "{lines:?}");
         assert!(
@@ -771,7 +806,7 @@ mod addressed_text_tests {
             ..AnchorCheck::default()
         };
 
-        let lines = summary(&clean_result(), &TargetAudit::default(), &anchors, 0);
+        let lines = summary(&clean_result(), &TargetAudit::default(), &anchors, 0, &[]);
 
         assert!(
             !lines.iter().any(|line| line.contains("not there")),
@@ -801,7 +836,7 @@ mod addressed_text_tests {
             without_locations: Vec::new(),
         };
 
-        let lines = summary(&clean_result(), &addressed, &anchors, 0);
+        let lines = summary(&clean_result(), &addressed, &anchors, 0, &[]);
 
         assert!(
             lines.iter().any(|line| line.contains("automated reader")),
@@ -877,6 +912,7 @@ mod addressed_text_tests {
             &TargetAudit::default(),
             &AnchorCheck::default(),
             2,
+            &[],
         );
 
         let line = lines
@@ -896,10 +932,53 @@ mod addressed_text_tests {
             &TargetAudit::default(),
             &AnchorCheck::default(),
             0,
+            &[],
         );
 
         assert!(
             !lines.iter().any(|line| line.contains("reshaping")),
+            "{lines:?}"
+        );
+    }
+
+    /// Observed twice in twenty-five scans: the agent writes a working file
+    /// into the code it is reading. Either way it is a change to somebody's
+    /// working tree that they did not ask for.
+    #[test]
+    fn files_the_scan_left_in_the_target_are_reported() {
+        let lines = summary(
+            &clean_result(),
+            &TargetAudit::default(),
+            &AnchorCheck::default(),
+            0,
+            &["?? raw_candidates.jsonl".to_owned()],
+        );
+
+        let line = lines
+            .iter()
+            .position(|line| line.contains("left files in the code"))
+            .expect("the line");
+        assert!(
+            lines[line + 1].contains("raw_candidates.jsonl"),
+            "{lines:?}"
+        );
+        // And why it matters beyond tidiness: the next scan of this repository
+        // will be refused.
+        assert!(lines[line].contains("later scan"), "{lines:?}");
+    }
+
+    #[test]
+    fn a_scan_that_left_nothing_says_nothing() {
+        let lines = summary(
+            &clean_result(),
+            &TargetAudit::default(),
+            &AnchorCheck::default(),
+            0,
+            &[],
+        );
+
+        assert!(
+            !lines.iter().any(|line| line.contains("left files")),
             "{lines:?}"
         );
     }

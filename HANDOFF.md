@@ -352,6 +352,18 @@ directory of output per run and a **fresh copy of the target per run**.
 over the target for it as well as for the working-tree failure — the workbench
 can say the target moved and cannot say what moved.
 
+**Every scan now reports what it left**, not only repeats. Counted across the
+scanned targets on this machine: **2 of 25 came back dirty** — one with the
+agent's `raw_candidates.jsonl`, one with a `store` binary from a `make` run
+while checking a memory-safety finding. Both then failed to save. Eight percent
+is not rare enough to leave unsaid, and it is a change to somebody's working
+tree that they did not ask for.
+
+It is a **before-and-after comparison**, not a dirty check. A bare "the target
+is dirty" would fire on every real checkout with work in progress and be
+switched off within a day; what is reported is only what appeared during the
+scan.
+
 `--repeat` also says it **when it happens** rather than leaving four failures to
 be explained at the end: after each run but the last, it checks the target and
 names what was left there. The check stays quiet for the final run, for a clean
