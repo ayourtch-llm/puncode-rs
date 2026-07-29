@@ -782,7 +782,7 @@ fn each_repeated_run_captures_to_its_own_file() {
     // this is checking.
     let (_, _, _) = run(&[
         "scan",
-        "fixtures/flask-injection",
+        "fixtures/orders-api",
         "--base-url",
         "http://127.0.0.1:1/v1",
         "--repeat",

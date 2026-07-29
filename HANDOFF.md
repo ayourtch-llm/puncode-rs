@@ -187,7 +187,7 @@ naming a path with an accent in it would be called a forgery. The check reads
 structure instead.
 
 **And the mistake worth remembering.** The first version said a document in this
-state meant the workbench had refused the scan. It sounded right, the c-memory
+state meant the workbench had refused the scan. It sounded right, the kv-store
 case fit it exactly, and it was wrong: of eleven flagged scans, three had
 published normally. It now reports the fact and not a verdict and deliberately
 does **not** fail verification. If you are tempted to make it fail, get evidence
@@ -255,7 +255,7 @@ code, and the difference is entirely that one flaw.
 
 **Taking the answers out changed detection by nothing.** Same seven found, same
 one missed, `bench --baseline` reports no flaw lost and none gained — only
-`off-by-one` moving from medium to high. `c-memory` scored 3 of 3 with its
+`off-by-one` moving from medium to high. `kv-store` scored 3 of 3 with its
 comments naming all three flaws and 3 of 3 without them.
 
 That was not what I expected, and I had already started reasoning from the
@@ -303,9 +303,9 @@ work is done.
 
 ## Open
 
-1. **`node-traversal` and `c-memory` exit 2 for reasons that are not detection
-   failures.** `node-traversal` completes fully and exits 2 because coverage is
-   `partial` — it found and reported everything it meant to. `c-memory` fails at
+1. **`link-service` and `kv-store` exit 2 for reasons that are not detection
+   failures.** `link-service` completes fully and exits 2 because coverage is
+   `partial` — it found and reported everything it meant to. `kv-store` fails at
    the very end with "The sealed scan manifest changed while it was being
    published", after all the work is done. Neither is a missed flaw, and reading
    the exit code alone would suggest otherwise.
@@ -329,19 +329,19 @@ turns detection into reading, and the number it produces is indistinguishable
 from a real one.
 
 It happened twice. First a README inside the fixture directory, caught by a
-person. Then comments in the source — `c-memory` named all three of its flaws,
-`clean-python`'s docstrings explained why each decoy was safe — which survived
+person. Then comments in the source — `kv-store` named all three of its flaws,
+`inventory-service`'s docstrings explained why each decoy was safe — which survived
 for days and invalidated every number taken in that period.
 
 `corpus_audit.rs` checks it now, and `bench` prints the result above the score.
 It also caught something on its first run that the by-hand pass had missed:
-`c-memory/Makefile` said "Deliberately built without hardening so the flaws stay
+`kv-store/Makefile` said "Deliberately built without hardening so the flaws stay
 reachable." Comments in `.c`, `.py` and `.js` had been reviewed; the Makefile
 had not.
 
 **When adding to a fixture, write comments as you would in code meant to work.**
 If a comment would help a reviewer find the bug, it will help the scanner too.
-The tell was there to be read for days: `node-traversal` is the only fixture
+The tell was there to be read for days: `link-service` is the only fixture
 that always had ordinary comments, and the only one that has ever failed to find
 something.
 
@@ -372,7 +372,7 @@ checkable rather than quoted.
 **Not evaluated: whether the local model is actually susceptible.** Detecting
 the text is not the same as knowing it works, and that needs a fixture carrying
 an injection attempt beside a flaw the model otherwise finds every time
-(flask-injection's two are the obvious baseline). Worth doing — until then, no
+(orders-api's two are the obvious baseline). Worth doing — until then, no
 claim is made either way.
 
 ## The ETXTBSY flake, and the rule for new suites

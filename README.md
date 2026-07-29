@@ -173,8 +173,8 @@ Two small projects with deliberate, documented flaws:
 
 | Fixture | Language | Planted flaws |
 |---|---|---|
-| `fixtures/flask-injection` | Python | SQL injection, OS command injection |
-| `fixtures/c-memory` | C | Stack buffer overflow, use after free, off-by-one |
+| `fixtures/orders-api` | Python | SQL injection, OS command injection |
+| `fixtures/kv-store` | C | Stack buffer overflow, use after free, off-by-one |
 
 What is planted in each is documented in [docs/fixtures.md](docs/fixtures.md) —
 deliberately *outside* the fixture directories, since a scan reads everything in
@@ -213,12 +213,12 @@ puncode-security bench /tmp/puncode-fixture-scans/<run>
 ```
 Detection
 
-  flask-injection      2 of 2 found
-  c-memory             3 of 3 found
-  node-traversal       2 of 3 found
+  orders-api      2 of 2 found
+  kv-store             3 of 3 found
+  link-service       2 of 3 found
                        set aside, not reported: timing-unsafe-compare
                          "Token is sourced from environment variable, not hardcoded. The CWE-259…"
-  clean-python         control — 0 false positive(s)
+  inventory-service         control — 0 false positive(s)
 
   detection      88%  (7 of 8)
   unmatched      0  (0 on fixtures with nothing planted)
@@ -349,8 +349,8 @@ Ground truth lives outside the fixtures, always: with the answers inside, an
 early run scored 2/2 and 3/3 and measured nothing at all. That was caught by a
 person reading the directory listing.
 
-The second time it was not. The rule covers comments, and `c-memory` named all
-three of its flaws in them while `clean-python`'s docstrings explained why each
+The second time it was not. The rule covers comments, and `kv-store` named all
+three of its flaws in them while `inventory-service`'s docstrings explained why each
 decoy was safe. It survived for days, and every number taken in that period was
 measuring reading rather than detection.
 
@@ -361,8 +361,8 @@ the numbers rather than below them:
 ```
 THE CORPUS GIVES ITS ANSWERS AWAY
 
-  c-memory/src/store.c:27 says "use after free" — /* Use after free: the record is …
-  clean-python/src/inventory.py:48 says "sql injection" — The query is built with an …
+  kv-store/src/store.c:27 says "use after free" — /* Use after free: the record is …
+  inventory-service/src/inventory.py:48 says "sql injection" — The query is built with an …
 
 A scan reads its whole target, so these numbers measure reading and not
 detection. Take the text out and run it again.

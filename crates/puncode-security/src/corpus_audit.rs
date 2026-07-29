@@ -206,7 +206,7 @@ mod tests {
             "/* Use after free: the record is released but left in the table. */\nvoid f(void) {}\n",
         );
 
-        let leaks = audit_fixture("c-memory", directory.path());
+        let leaks = audit_fixture("kv-store", directory.path());
 
         assert_eq!(leaks.len(), 1, "{leaks:?}");
         assert_eq!(leaks[0].phrase, "use after free");
@@ -225,7 +225,7 @@ mod tests {
             "\"\"\"Several routines here resemble things that are often unsafe.\n\nEach is safe.\n\"\"\"\n",
         );
 
-        let leaks = audit_fixture("clean-python", directory.path());
+        let leaks = audit_fixture("inventory-service", directory.path());
 
         assert!(leaks.len() >= 2, "{leaks:?}");
         assert!(leaks.iter().any(|leak| leak.phrase == "often unsafe"));
@@ -256,10 +256,7 @@ mod tests {
              // Compares a submitted token against the configured one.\n",
         );
 
-        assert_eq!(
-            audit_fixture("node-traversal", directory.path()),
-            Vec::new()
-        );
+        assert_eq!(audit_fixture("link-service", directory.path()), Vec::new());
     }
 
     #[test]
@@ -325,7 +322,7 @@ mod shipped_corpus_tests {
     }
 
     /// And proof the audit is not vacuous. The comments below are the real ones
-    /// that were in `c-memory` and `clean-python` until 2026-07-29; a check
+    /// that were in `kv-store` and `inventory-service` until 2026-07-29; a check
     /// that passed over them would be worth nothing.
     #[test]
     fn the_audit_catches_what_was_actually_in_the_corpus() {
@@ -341,7 +338,7 @@ mod shipped_corpus_tests {
         )
         .expect("writes");
 
-        let leaks = audit_fixture("c-memory", directory.path());
+        let leaks = audit_fixture("kv-store", directory.path());
 
         for expected in [
             "deliberate",

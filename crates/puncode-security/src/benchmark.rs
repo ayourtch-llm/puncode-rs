@@ -1193,8 +1193,10 @@ mod tests {
 
         let corpus = GroundTruth::parse(&text).expect("the corpus parses");
 
-        assert!(corpus.fixture("flask-injection").is_some());
-        let control = corpus.fixture("clean-python").expect("a control fixture");
+        assert!(corpus.fixture("orders-api").is_some());
+        let control = corpus
+            .fixture("inventory-service")
+            .expect("a control fixture");
         assert!(control.control, "the control fixture must be marked as one");
         assert!(control.flaws.is_empty(), "nothing may be planted in it");
     }
@@ -1429,7 +1431,7 @@ mod decoy_tests {
         .expect("the corpus is shipped");
         let corpus = GroundTruth::parse(&text).expect("parses");
 
-        let control = corpus.fixture("clean-python").expect("a control");
+        let control = corpus.fixture("inventory-service").expect("a control");
         assert!(!control.decoys.is_empty(), "the control has no decoys");
         for decoy in &control.decoys {
             assert!(
@@ -1925,7 +1927,7 @@ mod coverage_parsing_tests {
             .expect("the shipped corpus"),
         )
         .expect("parses");
-        let fixture = corpus.fixture("node-traversal").expect("the fixture");
+        let fixture = corpus.fixture("link-service").expect("the fixture");
         let deferrals = deferrals_from_coverage(&real_coverage()).expect("parses");
         // What that run actually reported: the traversal and the SSRF.
         let findings = vec![

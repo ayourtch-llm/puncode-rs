@@ -467,8 +467,8 @@ mod tests {
         })
         .to_string();
 
-        let findings = parse_findings(&body, Path::new("/corpus"), "fixtures/flask-injection")
-            .expect("parses");
+        let findings =
+            parse_findings(&body, Path::new("/corpus"), "fixtures/orders-api").expect("parses");
 
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].title, "SQL injection");
@@ -476,7 +476,7 @@ mod tests {
         assert!(
             findings[0].locations[0]
                 .file
-                .ends_with("fixtures/flask-injection/src/app.py"),
+                .ends_with("fixtures/orders-api/src/app.py"),
             "{:?}",
             findings[0].locations[0].file
         );
@@ -529,7 +529,7 @@ mod tests {
     #[test]
     fn scores_a_scan_against_the_shipped_corpus() {
         let results = tempfile::tempdir().expect("a directory");
-        let fixture = results.path().join("flask-injection");
+        let fixture = results.path().join("orders-api");
         std::fs::create_dir_all(&fixture).expect("creates");
         std::fs::write(
             fixture.join("findings.json"),
@@ -576,7 +576,7 @@ mod tests {
     #[test]
     fn distinguishes_a_blind_spot_from_a_judgement() {
         let results = tempfile::tempdir().expect("a directory");
-        let fixture = results.path().join("node-traversal");
+        let fixture = results.path().join("link-service");
         std::fs::create_dir_all(&fixture).expect("creates");
         std::fs::write(
             fixture.join("findings.json"),
@@ -636,7 +636,7 @@ mod tests {
     #[test]
     fn scores_findings_even_when_the_coverage_document_is_broken() {
         let results = tempfile::tempdir().expect("a directory");
-        let fixture = results.path().join("flask-injection");
+        let fixture = results.path().join("orders-api");
         std::fs::create_dir_all(&fixture).expect("creates");
         std::fs::write(
             fixture.join("findings.json"),
@@ -697,7 +697,7 @@ mod corpus_audit_tests {
             report: BenchmarkReport { scores: Vec::new() },
             unscanned: Vec::new(),
             leaks: vec![Leak {
-                fixture: "c-memory".to_owned(),
+                fixture: "kv-store".to_owned(),
                 file: "src/store.c".to_owned(),
                 line: 19,
                 phrase: "use after free".to_owned(),
@@ -753,10 +753,10 @@ mod corpus_audit_tests {
         // Proof the audit ran at all rather than finding nothing because it
         // looked nowhere: the fixtures must be where the corpus says they are.
         for fixture in [
-            "flask-injection",
-            "c-memory",
-            "node-traversal",
-            "clean-python",
+            "orders-api",
+            "kv-store",
+            "link-service",
+            "inventory-service",
         ] {
             assert!(
                 corpus_dir().join("fixtures").join(fixture).is_dir(),

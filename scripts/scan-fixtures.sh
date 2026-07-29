@@ -70,7 +70,21 @@ for entry in "${FIXTURES[@]}"; do
     snapshot="$OUT/$name.src"
     rm -rf "$snapshot"
     mkdir -p "$snapshot"
-    cp -r "$ROOT/fixtures/$name/." "$snapshot/"
+    # Tracked files only. A plain copy drags in whatever happens to be sitting
+    # in the working tree — a compiled binary, a __pycache__ left behind by a
+    # syntax check — and that lands inside the scan target. It happened: a .pyc
+    # written by a py_compile check minutes earlier ended up in a measured run.
+    mapfile -t tracked < <(cd "$ROOT" && git ls-files -- "fixtures/$name")
+    if [[ ${#tracked[@]} -eq 0 ]]; then
+        # Loudly. An empty target scans clean and looks like a pass.
+        echo "no tracked files under fixtures/$name - is it committed?" >&2
+        exit 2
+    fi
+    for tracked_file in "${tracked[@]}"; do
+        relative="${tracked_file#fixtures/$name/}"
+        mkdir -p "$snapshot/$(dirname "$relative")"
+        cp "$ROOT/$tracked_file" "$snapshot/$relative"
+    done
     ( cd "$snapshot" && git init -q && git add -A \
         && git -c user.email=fixtures@local -c user.name=fixtures commit -qm snapshot )
 

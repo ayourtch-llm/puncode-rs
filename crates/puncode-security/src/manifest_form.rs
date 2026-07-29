@@ -235,7 +235,7 @@ mod tests {
     }
 
     /// The document that started this: the real manifest from the run that
-    /// found every flaw in `c-memory` and was then refused by the workbench.
+    /// found every flaw in `kv-store` and was then refused by the workbench.
     #[test]
     fn recognises_a_manifest_the_writer_did_not_produce() {
         let form = inspect_manifest(&read("manifest-rewritten.json"));

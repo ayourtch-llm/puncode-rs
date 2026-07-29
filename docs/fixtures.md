@@ -9,8 +9,8 @@ over the answers — the run would be measuring reading comprehension rather tha
 detection.
 
 **The rule covers comments, and that is easy to forget.** It was forgotten here
-for longer than the README was: `c-memory` named all three of its flaws in
-comments (`/* Use after free: ... */`) and `clean-python`'s docstrings explained
+for longer than the README was: `kv-store` named all three of its flaws in
+comments (`/* Use after free: ... */`) and `inventory-service`'s docstrings explained
 why each decoy was safe. Both were fixed on 2026-07-29, and every measurement
 before that date was taken with the answers in the source.
 
@@ -18,10 +18,10 @@ When adding to a fixture, write the comments the way you would in code meant to
 work: what the routine is for, not what is wrong with it. If a comment would
 help a reviewer find the bug, it will help the scanner too, and then the number
 means nothing. The tell is easy to check — the one fixture here that always had
-ordinary comments, `node-traversal`, is the only one that has ever failed to
+ordinary comments, `link-service`, is the only one that has ever failed to
 find something.
 
-## flask-injection
+## orders-api
 
 A Flask service, reachable unauthenticated.
 
@@ -32,7 +32,7 @@ A Flask service, reachable unauthenticated.
 
 Expected: **2 findings**.
 
-## c-memory
+## kv-store
 
 A C key/value store.
 
@@ -47,7 +47,7 @@ Expected: **3 findings**.
 Verified to misbehave rather than merely look wrong: a long argument trips stack
 smashing detection, and the freed entry is read by a later lookup.
 
-## node-traversal
+## link-service
 
 A small Express file server and link previewer.
 
@@ -59,7 +59,7 @@ A small Express file server and link previewer.
 
 Expected: **3 findings**.
 
-## clean-python
+## inventory-service
 
 An inventory service with **nothing planted**, and five **decoys** — routines
 written to resemble things that are usually unsafe while being safe:
