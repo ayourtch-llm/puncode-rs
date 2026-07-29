@@ -91,6 +91,8 @@ fn read_findings(directory: &Path) -> Result<Vec<ReportedFinding>, String> {
                         .and_then(|severity| severity.get("level"))
                         .and_then(Value::as_str)
                         .map(str::to_owned),
+                    // Not used by consensus, which merges on location alone.
+                    cwe: None,
                     locations: locations(item),
                 })
                 .collect()

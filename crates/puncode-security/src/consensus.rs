@@ -196,6 +196,7 @@ mod tests {
     fn at(title: &str, file: &str, line: u32) -> ReportedFinding {
         ReportedFinding {
             title: title.to_owned(),
+            cwe: None,
             severity: None,
             locations: vec![ReportedLocation {
                 file: file.to_owned(),
@@ -427,6 +428,7 @@ mod tests {
     fn a_finding_without_a_location_does_not_swallow_others() {
         let vague = ReportedFinding {
             title: "something somewhere".to_owned(),
+            cwe: None,
             severity: None,
             locations: Vec::new(),
         };

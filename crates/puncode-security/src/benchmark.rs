@@ -29,6 +29,14 @@ use serde::{Deserialize, Serialize};
 /// line would measure precision of citation rather than detection.
 pub const LINE_TOLERANCE: u32 = 12;
 
+/// How far a same-class finding in the same file may sit and still be that flaw.
+///
+/// Wider than [`LINE_TOLERANCE`] because it rests on two agreeing signals
+/// rather than one. A real run cited an off-by-one fifteen lines from where it
+/// is, which proximity alone could not have credited to the right flaw — and
+/// did not: it credited the flaw to a different finding entirely.
+pub const CLASS_TOLERANCE: u32 = 60;
+
 /// A flaw deliberately placed in a fixture.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlantedFlaw {
@@ -141,8 +149,30 @@ pub struct ReportedLocation {
 pub struct ReportedFinding {
     pub title: String,
     pub severity: Option<String>,
+    /// The weakness class the scan assigned, when it assigned one.
+    pub cwe: Option<String>,
     /// Every location the finding cites. A finding matches if any of them do.
     pub locations: Vec<ReportedLocation>,
+}
+
+/// How a finding came to be credited to a planted flaw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchedBy {
+    /// The finding names the same weakness class, in the same file.
+    ///
+    /// Two independent signals agreeing. Line numbers from a model are
+    /// unreliable enough that proximity alone has assigned flaws to the wrong
+    /// findings here, so class agreement is tried first and is allowed a wider
+    /// line tolerance.
+    Class,
+    /// Only the location lined up.
+    ///
+    /// Still a match — a model that calls something "OS command injection" and
+    /// one that calls it "unsafe subprocess invocation" have found the same
+    /// flaw, and scoring on wording would measure vocabulary. But when both
+    /// sides state a class and the classes differ, that is worth seeing next to
+    /// the number it produced.
+    Location,
 }
 
 /// What became of one planted flaw.
@@ -156,6 +186,10 @@ pub struct FlawOutcome {
     pub expected_severity: Option<String>,
     /// What the scan called it.
     pub reported_severity: Option<String>,
+    /// The class the scan gave the finding that matched.
+    pub reported_cwe: Option<String>,
+    /// Which signal credited the finding to this flaw.
+    pub matched_by: Option<MatchedBy>,
     /// The deferral covering this flaw, when the scan set it aside instead of
     /// reporting it.
     ///
@@ -303,17 +337,42 @@ pub fn score_fixture_with_deferrals(
     let mut taken: Vec<bool> = vec![false; deferrals.len()];
     let mut outcomes = Vec::with_capacity(fixture.flaws.len());
 
-    for flaw in &fixture.flaws {
-        let matched = findings
+    // Class agreement first, across every flaw, before anything is matched on
+    // proximity alone. Done as two passes rather than one because a
+    // flaw-by-flaw scan takes whatever is nearest and available: in a real run
+    // that assigned the use-after-free to the off-by-one's finding and the
+    // off-by-one to the use-after-free's, and still scored three of three.
+    let mut assigned: Vec<Option<(usize, MatchedBy)>> = vec![None; fixture.flaws.len()];
+    for (position, flaw) in fixture.flaws.iter().enumerate() {
+        if let Some(index) = nearest_same_class(findings, &claimed, flaw) {
+            claimed[index] = true;
+            assigned[position] = Some((index, MatchedBy::Class));
+        }
+    }
+    for (position, flaw) in fixture.flaws.iter().enumerate() {
+        if assigned[position].is_some() {
+            continue;
+        }
+        if let Some((index, _)) = findings
             .iter()
             .enumerate()
-            .find(|(index, finding)| !claimed[*index] && cites(finding, flaw));
-        let (found_as, reported_severity) = match matched {
-            Some((index, finding)) => {
-                claimed[index] = true;
-                (Some(finding.title.clone()), finding.severity.clone())
-            }
-            None => (None, None),
+            .find(|(index, finding)| !claimed[*index] && cites(finding, flaw))
+        {
+            claimed[index] = true;
+            assigned[position] = Some((index, MatchedBy::Location));
+        }
+    }
+
+    for (position, flaw) in fixture.flaws.iter().enumerate() {
+        let matched = assigned[position].map(|(index, how)| (&findings[index], how));
+        let (found_as, reported_severity, reported_cwe, matched_by) = match matched {
+            Some((finding, how)) => (
+                Some(finding.title.clone()),
+                finding.severity.clone(),
+                finding.cwe.clone(),
+                Some(how),
+            ),
+            None => (None, None, None, None),
         };
         // Only looked for when the flaw was not reported. A found flaw needs no
         // excuse, and letting a deferral attach to one would double-count it.
@@ -336,6 +395,8 @@ pub fn score_fixture_with_deferrals(
             found_as,
             expected_severity: flaw.severity.clone(),
             reported_severity,
+            reported_cwe,
+            matched_by,
             deferred_as,
         });
     }
@@ -442,6 +503,46 @@ fn cites_decoy(finding: &ReportedFinding, decoy: &Decoy) -> bool {
     finding.locations.iter().any(|location| {
         same_file(&location.file, &decoy.file) && within_tolerance(location.line, decoy.lines)
     })
+}
+
+/// The nearest unclaimed finding of the same class in the same file.
+///
+/// Nearest rather than first, so two flaws of one class in one file go to the
+/// findings actually about them.
+fn nearest_same_class(
+    findings: &[ReportedFinding],
+    claimed: &[bool],
+    flaw: &PlantedFlaw,
+) -> Option<usize> {
+    let planted = flaw.cwe.as_deref()?;
+    findings
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !claimed[*index])
+        .filter(|(_, finding)| {
+            finding
+                .cwe
+                .as_deref()
+                .is_some_and(|reported| reported.eq_ignore_ascii_case(planted))
+        })
+        .filter_map(|(index, finding)| {
+            finding
+                .locations
+                .iter()
+                .filter(|location| same_file(&location.file, &flaw.file))
+                .map(|location| distance(location.line, flaw.lines))
+                .min()
+                .filter(|distance| *distance <= CLASS_TOLERANCE)
+                .map(|distance| (distance, index))
+        })
+        .min()
+        .map(|(_, index)| index)
+}
+
+/// How far a line sits from a planted range, zero when inside it.
+fn distance(line: u32, planted: (u32, u32)) -> u32 {
+    let (first, last) = planted;
+    first.saturating_sub(line).max(line.saturating_sub(last))
 }
 
 /// Whether a finding points at where a flaw was planted.
@@ -713,6 +814,30 @@ impl BenchmarkReport {
             .sum()
     }
 
+    /// Flaws credited to a finding of a different class, as (id, corpus, scan).
+    ///
+    /// Reported, not rejected. Matching is by location and never by wording,
+    /// deliberately — but a flaw credited to a finding the scan itself
+    /// classified differently is a match resting on one signal, and the reader
+    /// deciding what the number means should see which ones those are.
+    #[must_use]
+    pub fn class_disagreements(&self) -> Vec<(&str, &str, &str)> {
+        self.scores
+            .iter()
+            .flat_map(|score| &score.outcomes)
+            .filter(|outcome| outcome.matched_by == Some(MatchedBy::Location))
+            .filter_map(|outcome| {
+                let expected = outcome.cwe.as_deref()?;
+                let reported = outcome.reported_cwe.as_deref()?;
+                (!expected.eq_ignore_ascii_case(reported)).then_some((
+                    outcome.flaw_id.as_str(),
+                    expected,
+                    reported,
+                ))
+            })
+            .collect()
+    }
+
     /// Decoys tripped anywhere in the corpus.
     #[must_use]
     pub fn decoys_tripped(&self) -> Vec<&str> {
@@ -946,6 +1071,7 @@ mod tests {
     fn finding(title: &str, file: &str, line: u32) -> ReportedFinding {
         ReportedFinding {
             title: title.to_owned(),
+            cwe: None,
             severity: None,
             locations: vec![ReportedLocation {
                 file: file.to_owned(),
@@ -1240,6 +1366,8 @@ mod threshold_tests {
                 found_as: (index < found).then(|| "found".to_owned()),
                 expected_severity: None,
                 reported_severity: None,
+                reported_cwe: None,
+                matched_by: None,
                 deferred_as: None,
             })
             .collect();
@@ -1380,6 +1508,7 @@ mod decoy_tests {
     fn finding(title: &str, line: u32) -> ReportedFinding {
         ReportedFinding {
             title: title.to_owned(),
+            cwe: None,
             severity: None,
             locations: vec![ReportedLocation {
                 file: "src/inventory.py".to_owned(),
@@ -1498,6 +1627,7 @@ mod severity_tests {
     fn rated(severity: Option<&str>) -> ReportedFinding {
         ReportedFinding {
             title: "found".to_owned(),
+            cwe: None,
             severity: severity.map(str::to_owned),
             locations: vec![ReportedLocation {
                 file: "src/app.py".to_owned(),
@@ -1590,6 +1720,8 @@ mod comparison_tests {
                         found_as: found.then(|| "found".to_owned()),
                         expected_severity: None,
                         reported_severity: severity.map(str::to_owned),
+                        reported_cwe: None,
+                        matched_by: None,
                         deferred_as: None,
                     })
                     .collect(),
@@ -1757,6 +1889,7 @@ mod deferral_tests {
         let corpus = fixture(vec![flaw("timing", "src/server.js", 35, 35)]);
         let finding = ReportedFinding {
             title: "Timing attack".to_owned(),
+            cwe: None,
             severity: None,
             locations: vec![ReportedLocation {
                 file: "src/server.js".to_owned(),
@@ -1933,6 +2066,7 @@ mod coverage_parsing_tests {
         let findings = vec![
             ReportedFinding {
                 title: "Path traversal".to_owned(),
+                cwe: None,
                 severity: Some("high".to_owned()),
                 locations: vec![ReportedLocation {
                     file: "src/server.js".to_owned(),
@@ -1941,6 +2075,7 @@ mod coverage_parsing_tests {
             },
             ReportedFinding {
                 title: "SSRF".to_owned(),
+                cwe: None,
                 severity: Some("high".to_owned()),
                 locations: vec![ReportedLocation {
                     file: "src/server.js".to_owned(),
@@ -2061,5 +2196,176 @@ mod coverage_parsing_tests {
     #[test]
     fn refuses_something_that_is_not_json() {
         assert!(deferrals_from_coverage("not json").is_err());
+    }
+}
+
+#[cfg(test)]
+mod real_matching_tests {
+    use super::*;
+
+    /// The findings from a real run of `kv-store`, kept because the defect they
+    /// exposed was invisible in every invented case: the model cited lines far
+    /// enough from the truth that proximity alone assigned two flaws to each
+    /// other's findings, and the score came out three of three.
+    fn real_findings() -> Vec<ReportedFinding> {
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/findings-kv-store-swapped.json"),
+        )
+        .expect("the captured findings");
+        let document: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+        document["findings"]
+            .as_array()
+            .expect("findings")
+            .iter()
+            .map(|finding| ReportedFinding {
+                title: finding["title"].as_str().unwrap_or_default().to_owned(),
+                severity: finding["severity"]["level"].as_str().map(str::to_owned),
+                cwe: finding["taxonomy"]["cwe"][0].as_str().map(str::to_owned),
+                locations: finding["locations"]
+                    .as_array()
+                    .expect("locations")
+                    .iter()
+                    .flat_map(|location| {
+                        let file = location["path"].as_str().unwrap_or_default().to_owned();
+                        [location.get("startLine"), location.get("endLine")]
+                            .into_iter()
+                            .flatten()
+                            .filter_map(serde_json::Value::as_u64)
+                            .map(move |line| ReportedLocation {
+                                file: file.clone(),
+                                line: u32::try_from(line).unwrap_or(u32::MAX),
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+
+    fn kv_store() -> Fixture {
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../benchmark/ground-truth.json"),
+        )
+        .expect("the shipped corpus");
+        GroundTruth::parse(&text)
+            .expect("parses")
+            .fixture("kv-store")
+            .expect("the fixture")
+            .clone()
+    }
+
+    /// Every flaw goes to the finding that is actually about it.
+    #[test]
+    fn each_flaw_is_credited_to_the_finding_about_it() {
+        let score = score_fixture(&kv_store(), &real_findings());
+
+        for (id, expected) in [
+            ("stack-overflow", "Buffer overflow"),
+            ("use-after-free", "Use-after-free"),
+            ("off-by-one", "Off-by-one"),
+        ] {
+            let outcome = score
+                .outcomes
+                .iter()
+                .find(|outcome| outcome.flaw_id == id)
+                .expect(id);
+            let title = outcome.found_as.as_deref().unwrap_or("(not found)");
+            assert!(
+                title.starts_with(expected),
+                "{id} was credited to \"{title}\""
+            );
+        }
+    }
+
+    /// And the assignment rests on class agreement, not on proximity — which
+    /// for two of these is the only thing that could have got it right.
+    #[test]
+    fn the_swapped_pair_is_matched_by_class_and_not_by_line() {
+        let score = score_fixture(&kv_store(), &real_findings());
+
+        for id in ["use-after-free", "off-by-one"] {
+            let outcome = score
+                .outcomes
+                .iter()
+                .find(|outcome| outcome.flaw_id == id)
+                .expect(id);
+            assert_eq!(outcome.matched_by, Some(MatchedBy::Class), "{id}");
+        }
+    }
+
+    /// The finding nothing planted accounts for stays unmatched, rather than
+    /// being absorbed by a flaw it says nothing about.
+    #[test]
+    fn the_unplanted_finding_is_still_unmatched() {
+        let score = score_fixture(&kv_store(), &real_findings());
+
+        assert_eq!(score.unmatched.len(), 1, "{:?}", score.unmatched);
+        assert!(
+            score.unmatched[0].contains("strdup"),
+            "{:?}",
+            score.unmatched
+        );
+    }
+
+    /// Location-only matching still works when the classes are simply absent,
+    /// because a scan that names no class is not a scan that got it wrong.
+    #[test]
+    fn a_finding_without_a_class_still_matches_by_location() {
+        let mut findings = real_findings();
+        for finding in &mut findings {
+            finding.cwe = None;
+        }
+
+        let score = score_fixture(&kv_store(), &findings);
+
+        assert_eq!(score.found(), 3);
+        assert!(
+            score
+                .outcomes
+                .iter()
+                .all(|outcome| outcome.matched_by == Some(MatchedBy::Location))
+        );
+    }
+
+    /// A match resting on location alone, where both sides named a class and
+    /// the classes differ, is reported rather than hidden.
+    #[test]
+    fn a_class_disagreement_is_reported() {
+        let fixture = Fixture {
+            name: "f".to_owned(),
+            path: "fixtures/f".to_owned(),
+            language: None,
+            flaws: vec![PlantedFlaw {
+                id: "planted".to_owned(),
+                file: "a.c".to_owned(),
+                lines: (10, 10),
+                cwe: Some("CWE-193".to_owned()),
+                severity: None,
+                summary: None,
+            }],
+            control: false,
+            decoys: Vec::new(),
+        };
+        let findings = vec![ReportedFinding {
+            title: "Something else".to_owned(),
+            severity: None,
+            cwe: Some("CWE-476".to_owned()),
+            locations: vec![ReportedLocation {
+                file: "a.c".to_owned(),
+                line: 12,
+            }],
+        }];
+
+        let report = BenchmarkReport {
+            scores: vec![score_fixture(&fixture, &findings)],
+        };
+
+        assert_eq!(report.found(), 1);
+        assert_eq!(
+            report.class_disagreements(),
+            vec![("planted", "CWE-193", "CWE-476")]
+        );
     }
 }

@@ -1,0 +1,379 @@
+{
+  "documentType": "codex-security.findings",
+  "findings": [
+    {
+      "attackPath": {
+        "change_conditions": "Severity would drop to medium if input were length-limited before the copy, or if stack protections (canaries, FORTIFY_SOURCE) were enforced in the build.",
+        "counterevidence": null,
+        "dataflow": "argv[1] -> main -> describe_record -> strcpy -> summary[32] stack buffer",
+        "decision": "reportable",
+        "impact": "Stack buffer overflow can overwrite return address or adjacent variables, enabling arbitrary code execution on the local machine.",
+        "likelihood": "high",
+        "reachability": "The program accepts a command-line argument and passes it directly to describe_record. Any local user or process can invoke the binary with an arbitrary argument.",
+        "severity": "high",
+        "severity_rationale": "Direct path from untrusted command-line input to unbounded stack write in a local-execution binary. Stack-based buffer overflows are reliably exploitable for code execution on most platforms without ASLR/stack canaries defeating them. Impact is local code execution."
+      },
+      "codeEvidence": [
+        {
+          "code": "    if (record_count > MAX_RECORDS) {\n",
+          "endLine": 54,
+          "explanation": "describe_record copies argv[1] into char summary[32] using strcpy with no length check. A label longer than 31 characters overwrites the stack.",
+          "id": "evidence-0",
+          "label": "source",
+          "path": "src/store.c",
+          "role": "source",
+          "startLine": 54
+        },
+        {
+          "code": "static int record_count = 0;\n\n/* Prints a one-line summary of a record for the operator log. */\n",
+          "endLine": 19,
+          "explanation": "describe_record copies argv[1] into char summary[32] using strcpy with no length check. A label longer than 31 characters overwrites the stack.",
+          "id": "evidence-1",
+          "label": "sink",
+          "path": "src/store.c",
+          "role": "sink",
+          "startLine": 17
+        }
+      ],
+      "confidence": {
+        "level": "high",
+        "rationale": "Directstrcpy into bounded stack buffer from argv with no length check; reproducible with long input."
+      },
+      "extensions": {
+        "candidateId": "candidate-9c173e4883423ff0"
+      },
+      "findingId": "csf_5369cef319462ba0d4615a62",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:75d7fb3e6d2b0aae5ee5ede2775dab85843f4268cf931377adf18528d92f8ba4"
+      },
+      "identity": {
+        "anchor": "candidate-9c173e4883423ff0"
+      },
+      "locations": [
+        {
+          "endLine": 54,
+          "path": "src/store.c",
+          "role": "source",
+          "startLine": 54
+        },
+        {
+          "endLine": 19,
+          "path": "src/store.c",
+          "role": "sink",
+          "startLine": 17
+        }
+      ],
+      "occurrenceId": "occ_a0f3d8a3680970531d4e84d4",
+      "preventiveControls": [
+        "Enforce stack canaries and FORTIFY_SOURCE in the build. Adopt a coding standard prohibiting strcpy/gets."
+      ],
+      "provenance": {
+        "source": "codex-security-plugin"
+      },
+      "remediation": "Replace strcpy with strncpy or snprintf in describe_record, limiting copy to sizeof(summary)-1 bytes. Add input length validation before the copy.",
+      "remediationTests": [
+        "Test describe_record with a 64-character label; verify no stack corruption and the output is truncated safely."
+      ],
+      "rootCause": {
+        "summary": "describe_record copies argv[1] into char summary[32] using strcpy with no length check. A label longer than 31 characters overwrites the stack."
+      },
+      "ruleId": "codex-security/cwe-120",
+      "severity": {
+        "changeConditions": "Severity would drop to medium if input were length-limited before the copy, or if stack protections (canaries, FORTIFY_SOURCE) were enforced in the build.",
+        "level": "high",
+        "rationale": "Direct path from untrusted command-line input to unbounded stack write in a local-execution binary. Stack-based buffer overflows are reliably exploitable for code execution on most platforms without ASLR/stack canaries defeating them. Impact is local code execution."
+      },
+      "summary": "Buffer overflow via unbounded strcpy into 32-byte stack buffer from command-line argument.",
+      "taxonomy": {
+        "category": "CWE-120",
+        "cwe": [
+          "CWE-120"
+        ]
+      },
+      "title": "Buffer overflow via unbounded strcpy into 32-byte stack buffer from command-line argument.",
+      "validation": {
+        "confidence": "high",
+        "confidence_rationale": "Directstrcpy into bounded stack buffer from argv with no length check; reproducible with long input.",
+        "counterevidence_or_proof_gap": null,
+        "evidence": "describe_record declares char summary[32] and calls strcpy(summary, label) where label originates from argv[1]. A label of 40+ characters overwrites adjacent stack frames.",
+        "method": "static analysis of buffer boundary and input path",
+        "remaining_uncertainty": null,
+        "rubric": "Unbounded copy into fixed stack buffer from attacker-controlled input."
+      }
+    },
+    {
+      "attackPath": {
+        "change_conditions": "Severity increases if the program accepts external input to drive record_count to MAX_RECORDS. Changes to a medium if the guard is fixed to >=.",
+        "counterevidence": null,
+        "dataflow": "add_record argument -> guard check (broken > vs >=) -> records[record_count] out-of-bounds write",
+        "decision": "reportable",
+        "impact": "Heap/stack write one past the end of the records array, potentially corrupting adjacent data or enabling control-flow hijack depending on memory layout.",
+        "likelihood": "medium",
+        "reachability": "The add_record function is called from main. To reach the bug, 16 records must be stored first; the current main only stores one, but the function is designed for multiple insertions.",
+        "severity": "medium",
+        "severity_rationale": "The off-by-one write is real but requires filling the table to capacity first, which is not demonstrated in the current main path. Impact is memory corruption but exploitability is lower than the buffer overflow."
+      },
+      "codeEvidence": [
+        {
+          "code": "}\n",
+          "endLine": 39,
+          "explanation": "Guard uses record_count > MAX_RECORDS instead of >=. When record_count equals MAX_RECORDS (16), the check passes and records[16] is written, exceeding the 16-element array bounds.",
+          "id": "evidence-0",
+          "label": "root_control",
+          "path": "src/store.c",
+          "role": "root_control",
+          "startLine": 39
+        }
+      ],
+      "confidence": {
+        "level": "high",
+        "rationale": "Off-by-one in guard condition is unambiguous; the loop in main demonstrates the function is reachable."
+      },
+      "extensions": {
+        "candidateId": "candidate-b0ca3ebdebc4104b"
+      },
+      "findingId": "csf_6369f22344b6cce71f801fb4",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:d9726de176c23ee7645a8b76af3dddb1dae80328a1d7e4daead871d7ec9fca49"
+      },
+      "identity": {
+        "anchor": "candidate-b0ca3ebdebc4104b"
+      },
+      "locations": [
+        {
+          "endLine": 39,
+          "path": "src/store.c",
+          "role": "root_control",
+          "startLine": 39
+        }
+      ],
+      "occurrenceId": "occ_92d52cbedee8c8d286db717e",
+      "preventiveControls": [
+        "Use static analysis rules to flag off-by-one guard patterns. Code review checklist for array bound checks."
+      ],
+      "provenance": {
+        "source": "codex-security-plugin"
+      },
+      "remediation": "Change the guard in add_record from record_count > MAX_RECORDS to record_count >= MAX_RECORDS to prevent out-of-bounds writes.",
+      "remediationTests": [
+        "Test add_record with 16 valid entries followed by a 17th; verify it returns -1 without writing past the array."
+      ],
+      "rootCause": {
+        "summary": "Guard uses record_count > MAX_RECORDS instead of >=. When record_count equals MAX_RECORDS (16), the check passes and records[16] is written, exceeding the 16-element array bounds."
+      },
+      "ruleId": "codex-security/cwe-193",
+      "severity": {
+        "changeConditions": "Severity increases if the program accepts external input to drive record_count to MAX_RECORDS. Changes to a medium if the guard is fixed to >=.",
+        "level": "medium",
+        "rationale": "The off-by-one write is real but requires filling the table to capacity first, which is not demonstrated in the current main path. Impact is memory corruption but exploitability is lower than the buffer overflow."
+      },
+      "summary": "Off-by-one allows write past end of fixed record array when table has MAX_RECORDS entries.",
+      "taxonomy": {
+        "category": "CWE-193",
+        "cwe": [
+          "CWE-193"
+        ]
+      },
+      "title": "Off-by-one allows write past end of fixed record array when table has MAX_RECORDS entries.",
+      "validation": {
+        "confidence": "high",
+        "confidence_rationale": "Off-by-one in guard condition is unambiguous; the loop in main demonstrates the function is reachable.",
+        "counterevidence_or_proof_gap": null,
+        "evidence": "add_record checks record_count > MAX_RECORDS. When 16 records exist, the check passes and records[16] is written. The table is populated via add_record calls.",
+        "method": "static analysis of array bound check",
+        "remaining_uncertainty": null,
+        "rubric": "Array write guard permits one past-end write."
+      }
+    },
+    {
+      "attackPath": {
+        "change_conditions": "Severity would increase if the dangling pointer were written to. Setting to low if the freed memory is immediately reallocated in practice.",
+        "counterevidence": null,
+        "dataflow": "delete_record frees records[i].value -> lookup_record returns dangling pointer -> printf uses freed memory",
+        "decision": "reportable",
+        "impact": "Reading freed memory can leak stack/heap contents, cause undefined behavior, or crash the program. In a local CLI tool the impact is information disclosure or denial of service.",
+        "likelihood": "high",
+        "reachability": "Direct call sequence in main: the program adds a record, deletes it, then looks it up. The dangling pointer is read immediately.",
+        "severity": "medium",
+        "severity_rationale": "The use-after-free is directly reachable in the default execution path and will read freed memory. However, the program only reads (not writes) the freed pointer, limiting impact to information disclosure or crash rather than code execution."
+      },
+      "codeEvidence": [
+        {
+          "code": "/* Removes a record from the store, releasing the memory it holds.\n * Called when an entry is retired from the table. */\nvoid delete_record(const char *name)\n{\n    for (int i = 0; i < record_count; i++) {\n        if (strcmp(records[i].name, name) == 0) {\n",
+          "endLine": 32,
+          "explanation": "main calls delete_record(greeting) which frees records[i].name and records[i].value, then calls lookup_record(greeting) which returns the freed value pointer without checking for NULL or re-validation.",
+          "id": "evidence-0",
+          "label": "root_control",
+          "path": "src/store.c",
+          "role": "root_control",
+          "startLine": 27
+        },
+        {
+          "code": "    records[record_count].name = strdup(name);\n",
+          "endLine": 57,
+          "explanation": "main calls delete_record(greeting) which frees records[i].name and records[i].value, then calls lookup_record(greeting) which returns the freed value pointer without checking for NULL or re-validation.",
+          "id": "evidence-1",
+          "label": "sink",
+          "path": "src/store.c",
+          "role": "sink",
+          "startLine": 57
+        }
+      ],
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct call sequence in main: add_record, delete_record, then lookup_record on the same key. The free and use are consecutive."
+      },
+      "extensions": {
+        "candidateId": "candidate-908ebe6843a6003e"
+      },
+      "findingId": "csf_c413f49f66651364ce8f0df7",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:91face71c205b9a6f3bda12658c66b98a48127f8fb0a58be077463abb39370ba"
+      },
+      "identity": {
+        "anchor": "candidate-908ebe6843a6003e"
+      },
+      "locations": [
+        {
+          "endLine": 32,
+          "path": "src/store.c",
+          "role": "root_control",
+          "startLine": 27
+        },
+        {
+          "endLine": 57,
+          "path": "src/store.c",
+          "role": "sink",
+          "startLine": 57
+        }
+      ],
+      "occurrenceId": "occ_b6d96e6a1d685a3381f9cca4",
+      "preventiveControls": [
+        "Adopt ownership semantics (e.g., set pointers to NULL after free). Use sanitizers (ASan) in testing."
+      ],
+      "provenance": {
+        "source": "codex-security-plugin"
+      },
+      "remediation": "Set records[i].name and records[i].value to NULL after freeing in delete_record. Check the returned pointer from lookup_record for NULL before use.",
+      "remediationTests": [
+        "Test the add-delete-lookup sequence; verify lookup_record returns NULL after delete and main handles NULL gracefully."
+      ],
+      "rootCause": {
+        "summary": "main calls delete_record(greeting) which frees records[i].name and records[i].value, then calls lookup_record(greeting) which returns the freed value pointer without checking for NULL or re-validation."
+      },
+      "ruleId": "codex-security/cwe-416",
+      "severity": {
+        "changeConditions": "Severity would increase if the dangling pointer were written to. Setting to low if the freed memory is immediately reallocated in practice.",
+        "level": "medium",
+        "rationale": "The use-after-free is directly reachable in the default execution path and will read freed memory. However, the program only reads (not writes) the freed pointer, limiting impact to information disclosure or crash rather than code execution."
+      },
+      "summary": "Use-after-free: lookup_record returns dangling pointer after delete_record frees the record.",
+      "taxonomy": {
+        "category": "CWE-416",
+        "cwe": [
+          "CWE-416"
+        ]
+      },
+      "title": "Use-after-free: lookup_record returns dangling pointer after delete_record frees the record.",
+      "validation": {
+        "confidence": "high",
+        "confidence_rationale": "Direct call sequence in main: add_record, delete_record, then lookup_record on the same key. The free and use are consecutive.",
+        "counterevidence_or_proof_gap": null,
+        "evidence": "main calls delete_record(\"greeting\") which frees records[i].name and records[i].value at lines 29-30, then immediately calls lookup_record(\"greeting\") which returns the now-dangling records[i].value.",
+        "method": "dataflow trace through main control flow",
+        "remaining_uncertainty": null,
+        "rubric": "Pointer returned by lookup after corresponding free is used."
+      }
+    },
+    {
+      "attackPath": {
+        "change_conditions": "Severity increases if the program processes untrusted data under memory-constrained conditions. Adds robustness but is not a primary security concern.",
+        "counterevidence": null,
+        "dataflow": "strdup returns NULL on allocation failure -> records[record_count].name/.value is NULL -> strcmp/free on NULL",
+        "decision": "reportable",
+        "impact": "NULL pointer dereference causes program crash (denial of service).",
+        "likelihood": "low",
+        "reachability": "Requires both external input driving add_record and system memory pressure causing strdup to fail. In normal local operation this is very unlikely.",
+        "severity": "low",
+        "severity_rationale": "NULL dereference is a crash but requires an unlikely combination of external input and memory pressure. Impact is limited to denial of service for a local CLI tool."
+      },
+      "codeEvidence": [
+        {
+          "code": "const char *lookup_record(const char *name)\n{\n",
+          "endLine": 42,
+          "explanation": "strdup(name) and strdup(value) are assigned directly to records[record_count].name and .value without checking for NULL. If allocation fails, subsequent strcmp or free on these fields will crash.",
+          "id": "evidence-0",
+          "label": "sink",
+          "path": "src/store.c",
+          "role": "sink",
+          "startLine": 41
+        }
+      ],
+      "confidence": {
+        "level": "medium",
+        "rationale": "strdup can legitimately return NULL on memory pressure; unchecked use is a crash vector. Lower confidence because the program only stores one hardcoded record in normal operation."
+      },
+      "extensions": {
+        "candidateId": "candidate-98f02d6abb52063d"
+      },
+      "findingId": "csf_0d9eed30fb074d9895b1423a",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:c6c8fb11f14b7ee62e8121bf6aa49b3a12921318df39e04a6f741c1be90c8444"
+      },
+      "identity": {
+        "anchor": "candidate-98f02d6abb52063d"
+      },
+      "locations": [
+        {
+          "endLine": 42,
+          "path": "src/store.c",
+          "role": "sink",
+          "startLine": 41
+        }
+      ],
+      "occurrenceId": "occ_af528045480cc510a39583f5",
+      "preventiveControls": [
+        "Require NULL checks on all allocation returns. Enable compiler warnings for unchecked malloc/strdup."
+      ],
+      "provenance": {
+        "source": "codex-security-plugin"
+      },
+      "remediation": "Check the return value of strdup for NULL before assignment. Return an error code from add_record if allocation fails.",
+      "remediationTests": [
+        "Test add_record with mocked strdup returning NULL; verify the function returns an error without crashing."
+      ],
+      "rootCause": {
+        "summary": "strdup(name) and strdup(value) are assigned directly to records[record_count].name and .value without checking for NULL. If allocation fails, subsequent strcmp or free on these fields will crash."
+      },
+      "ruleId": "codex-security/cwe-476",
+      "severity": {
+        "changeConditions": "Severity increases if the program processes untrusted data under memory-constrained conditions. Adds robustness but is not a primary security concern.",
+        "level": "low",
+        "rationale": "NULL dereference is a crash but requires an unlikely combination of external input and memory pressure. Impact is limited to denial of service for a local CLI tool."
+      },
+      "summary": "Unchecked strdup return may dereference NULL on allocation failure.",
+      "taxonomy": {
+        "category": "CWE-476",
+        "cwe": [
+          "CWE-476"
+        ]
+      },
+      "title": "Unchecked strdup return may dereference NULL on allocation failure.",
+      "validation": {
+        "confidence": "medium",
+        "confidence_rationale": "strdup can legitimately return NULL on memory pressure; unchecked use is a crash vector. Lower confidence because the program only stores one hardcoded record in normal operation.",
+        "counterevidence_or_proof_gap": null,
+        "evidence": "strdup(name) and strdup(value) at lines 41-42 are assigned directly. A NULL return from either would cause a crash on subsequent strcmp or free.",
+        "method": "static analysis of allocation return value",
+        "remaining_uncertainty": "The main path only calls add_record with hardcoded strings; crash requires external input combined with allocation failure.",
+        "rubric": "Unchecked allocation return value."
+      }
+    }
+  ],
+  "scanId": "2bbbcb99-1da7-4be2-b7a9-77cd28abbc59",
+  "schemaVersion": "1.0"
+}

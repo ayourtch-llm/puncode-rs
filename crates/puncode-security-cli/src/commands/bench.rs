@@ -115,6 +115,15 @@ fn parse_findings(
                 .and_then(|severity| severity.get("level"))
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            // The first class the scan named. Used to match a finding to the
+            // flaw it is about before anything is matched on proximity alone.
+            cwe: item
+                .get("taxonomy")
+                .and_then(|taxonomy| taxonomy.get("cwe"))
+                .and_then(Value::as_array)
+                .and_then(|classes| classes.first())
+                .and_then(Value::as_str)
+                .map(str::to_owned),
             locations: locations(item, &prefix),
         })
         .collect())
@@ -202,6 +211,13 @@ pub fn render_json(outcome: &Report, shortfalls: &[Shortfall]) -> String {
         "severityAgreement": report.severity_agreement().map(|(agreed, comparable)| {
             serde_json::json!({ "agreed": agreed, "comparable": comparable })
         }),
+        "classDisagreements": report
+            .class_disagreements()
+            .into_iter()
+            .map(|(id, expected, reported)| {
+                serde_json::json!({ "flaw": id, "corpus": expected, "scan": reported })
+            })
+            .collect::<Vec<_>>(),
         "severityDisagreements": report
             .severity_disagreements()
             .into_iter()
@@ -445,6 +461,22 @@ pub fn render(outcome: &Report) -> String {
             "  severity       {agreed} of {comparable} rated as the corpus does"
         ));
         for (id, expected, reported) in report.severity_disagreements() {
+            lines.push(format!(
+                "                 {id}: corpus {expected}, scan {reported}"
+            ));
+        }
+    }
+
+    // Said next to the number it produced. A flaw credited to a finding the
+    // scan classified differently is a match resting on proximity alone, and
+    // model line numbers have been wrong enough here to make that worth seeing.
+    let classes = report.class_disagreements();
+    if !classes.is_empty() {
+        lines.push(format!(
+            "  class          {} matched by location alone, with a different class",
+            classes.len()
+        ));
+        for (id, expected, reported) in classes {
             lines.push(format!(
                 "                 {id}: corpus {expected}, scan {reported}"
             ));
