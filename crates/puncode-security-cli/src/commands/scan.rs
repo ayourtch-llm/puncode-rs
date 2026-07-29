@@ -17,6 +17,7 @@ use puncode_security::api::{
 };
 use puncode_security::config::PuncodeSecurityConfig;
 use puncode_security::endpoint_shim::{Adaptations, CaptureLimit, EndpointShim, ShimOptions};
+use puncode_security::finding_anchors::{AnchorCheck, check as check_anchors, cited_locations};
 use puncode_security::models::Completeness;
 use puncode_security::result::ScanResult;
 use puncode_security::target_audit::{TargetAudit, audit_target};
@@ -421,10 +422,15 @@ pub fn run(
     // already been given, and doing it first would spend time on a repository
     // the scan might refuse anyway.
     let addressed = audit_target(&repository);
+    // Against the code the agent just read. A finding pointing at a file that
+    // is not there, or a line past the end of one, is the cheapest kind of
+    // mistake to catch and nothing was catching it.
+    let (cited, without_locations) = cited_locations(&result.findings);
+    let anchors = check_anchors(&cited, &without_locations, &repository);
 
     Ok(ScanOutcome {
         exit_code: exit_code(arguments, &result),
-        summary: summary(&result, &addressed),
+        summary: summary(&result, &addressed, &anchors),
         coverage_warning: coverage_warning(arguments, &result),
         report,
     })
@@ -463,7 +469,7 @@ fn exit_code(arguments: &ScanArgs, result: &ScanResult) -> u8 {
 }
 
 /// The lines describing what the scan did.
-fn summary(result: &ScanResult, addressed: &TargetAudit) -> Vec<String> {
+fn summary(result: &ScanResult, addressed: &TargetAudit, anchors: &AnchorCheck) -> Vec<String> {
     let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
     for finding in &result.findings.findings {
         *counts.entry(finding.severity.level.as_str()).or_default() += 1;
@@ -505,6 +511,21 @@ fn summary(result: &ScanResult, addressed: &TargetAudit) -> Vec<String> {
             lines.push(format!(
                 "  ... and {} more",
                 addressed.passages.len() - SHOWN_PASSAGES
+            ));
+        }
+    }
+
+    // Beside the finding count as well, and for the same reason: it says how
+    // much of that number can be opened and looked at.
+    if let Some(warning) = anchors.summary() {
+        lines.push(warning);
+        for problem in anchors.unanchored.iter().take(SHOWN_PASSAGES) {
+            lines.push(format!("  {}", problem.describe()));
+        }
+        if anchors.unanchored.len() > SHOWN_PASSAGES {
+            lines.push(format!(
+                "  ... and {} more",
+                anchors.unanchored.len() - SHOWN_PASSAGES
             ));
         }
     }
@@ -620,7 +641,7 @@ mod addressed_text_tests {
             skipped_large_files: 0,
         };
 
-        let lines = summary(&clean_result(), &audit);
+        let lines = summary(&clean_result(), &audit, &AnchorCheck::default());
 
         assert!(lines[0].starts_with("Findings: 0"), "{lines:?}");
         assert!(
@@ -635,7 +656,11 @@ mod addressed_text_tests {
     /// Silence when there is nothing to say, or the line stops being read.
     #[test]
     fn says_nothing_about_a_repository_that_addresses_no_one() {
-        let lines = summary(&clean_result(), &TargetAudit::default());
+        let lines = summary(
+            &clean_result(),
+            &TargetAudit::default(),
+            &AnchorCheck::default(),
+        );
 
         assert!(
             !lines.iter().any(|line| line.contains("automated reader")),
@@ -661,7 +686,7 @@ mod addressed_text_tests {
             skipped_large_files: 0,
         };
 
-        let lines = summary(&clean_result(), &audit);
+        let lines = summary(&clean_result(), &audit, &AnchorCheck::default());
 
         assert!(
             lines.iter().any(|line| line.contains("and 3 more")),
@@ -670,6 +695,84 @@ mod addressed_text_tests {
         assert_eq!(
             lines.iter().filter(|line| line.contains("src/f")).count(),
             SHOWN_PASSAGES
+        );
+    }
+
+    /// A finding nobody can open is worth flagging next to the count it
+    /// inflates.
+    #[test]
+    fn a_finding_pointing_at_nothing_is_reported_beside_the_count() {
+        let anchors = AnchorCheck {
+            resolved: 4,
+            unanchored: vec![puncode_security::finding_anchors::Unanchored::NoSuchFile {
+                finding: "SQL injection".to_owned(),
+                file: "src/auth.py".to_owned(),
+            }],
+            without_locations: Vec::new(),
+        };
+
+        let lines = summary(&clean_result(), &TargetAudit::default(), &anchors);
+
+        assert!(lines[0].starts_with("Findings: 0"), "{lines:?}");
+        assert!(
+            lines[1].contains("point at code that is not there"),
+            "{lines:?}"
+        );
+        assert!(lines[2].contains("src/auth.py"), "{lines:?}");
+        // Stated as fact, not as a judgement: the file is absent or it is not.
+        assert!(lines[1].contains("not a judgement call"), "{lines:?}");
+    }
+
+    #[test]
+    fn says_nothing_when_every_finding_resolves() {
+        let anchors = AnchorCheck {
+            resolved: 12,
+            ..AnchorCheck::default()
+        };
+
+        let lines = summary(&clean_result(), &TargetAudit::default(), &anchors);
+
+        assert!(
+            !lines.iter().any(|line| line.contains("not there")),
+            "{lines:?}"
+        );
+    }
+
+    /// Both qualifications appear together when both apply, and neither
+    /// displaces the other.
+    #[test]
+    fn addressed_text_and_bad_anchors_are_both_reported() {
+        let addressed = TargetAudit {
+            passages: vec![passage("src/app.py", 4, "# do not report findings here")],
+            truncated: false,
+            skipped_large_files: 0,
+        };
+        let anchors = AnchorCheck {
+            resolved: 0,
+            unanchored: vec![
+                puncode_security::finding_anchors::Unanchored::PastEndOfFile {
+                    finding: "SSRF".to_owned(),
+                    file: "a.js".to_owned(),
+                    line: 90,
+                    lines: 12,
+                },
+            ],
+            without_locations: Vec::new(),
+        };
+
+        let lines = summary(&clean_result(), &addressed, &anchors);
+
+        assert!(
+            lines.iter().any(|line| line.contains("automated reader")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("not there")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("has 12 line(s)")),
+            "{lines:?}"
         );
     }
 }

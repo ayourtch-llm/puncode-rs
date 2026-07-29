@@ -401,6 +401,26 @@ they handed `render_comparison` a differences list directly and never exercised
 the wiring that produces one.** Verified properly by copying a real run and
 rewriting its provenance records.
 
+## Findings are checked against the code now
+
+`finding_anchors.rs`. Every other check on a scan is internal: the seal, the
+fingerprints, the manifest form. All of them hold for a finding citing a file
+that is not in the repository, or a line past the end of one. A scan now
+resolves each location it produced against the target it just read.
+
+Exact answers only — file present, line inside it. **Do not extend this into
+judging whether a finding is right**; that is a different problem and mixing
+them would cost the one thing this check has, which is that it never has to
+hedge.
+
+Measured: 67 locations across two corpus runs, all resolved. Honest reading —
+the fixtures are single files of a few dozen lines, so this is the easy case and
+says little about a large repository. `check_anchors` is kept as an example so
+the number is checkable rather than quoted.
+
+`endLine` is checked as well as `startLine`. Checking only the start would miss
+a range running off the end, which is the same error.
+
 ## The ETXTBSY flake, and the rule for new suites
 
 Tests that write an executable stub and spawn it race on Linux. The suite runs

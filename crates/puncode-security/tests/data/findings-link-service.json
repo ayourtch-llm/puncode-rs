@@ -1,0 +1,197 @@
+{
+  "documentType": "codex-security.findings",
+  "findings": [
+    {
+      "attackPath": {
+        "change_conditions": "Path validation ensuring resolved path remains within ROOT, or allowlist of permitted filenames.",
+        "counterevidence": null,
+        "dataflow": "Attacker-controlled req.query.name flows into path.join(ROOT, name), resolving ../ segments to escape ROOT. The resolved path is passed to fs.readFile().",
+        "decision": "reportable",
+        "evidenceRefs": [
+          "path-join-evidence"
+        ],
+        "impact": "Read arbitrary files from the server filesystem including configuration files, source code, and secrets.",
+        "likelihood": "high",
+        "reachability": "The /file endpoint is publicly accessible without authentication. Any unauthenticated attacker can craft a request with ../ in the name parameter.",
+        "severity": "high",
+        "severity_rationale": "Publicly accessible route with no authentication. Can read sensitive files like /etc/passwd, application source code, or configuration files containing secrets."
+      },
+      "codeEvidence": [
+        {
+          "code": "const target = path.join(ROOT, name); fs.readFile(target, \"utf8\", ...)",
+          "endLine": 13,
+          "explanation": "User-controlled name is joined with ROOT without validation, allowing ../ traversal.",
+          "id": "path-join-evidence",
+          "label": "Unsafe path construction",
+          "path": "src/server.js",
+          "startLine": 12
+        }
+      ],
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct evidence: req.query.name flows into path.join(ROOT, name) without any validation or sanitization. path.join does not prevent ../ traversal from escaping ROOT. The /file endpoint is publicly accessible without authentication."
+      },
+      "extensions": {
+        "candidateId": "candidate-6ede4e17cae24b4f"
+      },
+      "findingId": "csf_5a6d9d791c2ea4a5c15143fc",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:d4c1e32f272e767e48bb97932e0a955d2fc82a2c031422fe86033d69d1528653"
+      },
+      "identity": {
+        "anchor": "node-path-traversal"
+      },
+      "locations": [
+        {
+          "endLine": 17,
+          "path": "src/server.js",
+          "role": "entrypoint",
+          "startLine": 11
+        },
+        {
+          "path": "src/server.js",
+          "role": "source",
+          "startLine": 12
+        },
+        {
+          "path": "src/server.js",
+          "role": "sink",
+          "startLine": 13
+        }
+      ],
+      "occurrenceId": "occ_8cab5190623b01221a6d7116",
+      "provenance": {
+        "source": "codex-security-plugin"
+      },
+      "remediation": "Validate the resolved path to ensure it remains within ROOT. Use path.relative() to check the resolved path is a subpath of ROOT, or use an allowlist of permitted filenames. Reject requests containing ../ or other traversal sequences.",
+      "rootCause": {
+        "summary": "User-controlled input (req.query.name) flows directly into filesystem path construction via path.join(ROOT, name) without any validation that the resolved path remains within the intended ROOT directory."
+      },
+      "ruleId": "node-path-traversal",
+      "severity": {
+        "level": "high",
+        "score": 7.5,
+        "scoringSystem": "codex-security-v1"
+      },
+      "summary": "The /file endpoint constructs file paths from req.query.name using path.join(ROOT, name) without validating that the resolved path remains within ROOT, allowing ../ traversal to escape the public directory and read arbitrary files from the server filesystem.",
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-22"
+        ]
+      },
+      "title": "Path traversal in /file endpoint",
+      "validation": {
+        "confidence": "high",
+        "confidence_rationale": "Direct evidence of unvalidated user input flowing into filesystem operations.",
+        "counterevidence_or_proof_gap": null,
+        "disposition": "reportable",
+        "evidence": "path.join(ROOT, name) resolves ../ segments, allowing directory traversal beyond ROOT.",
+        "evidenceRefs": [
+          "path-join-evidence"
+        ],
+        "method": "static analysis with manual verification of path resolution",
+        "remaining_uncertainty": null,
+        "rubric": "User-controlled input flows into a filesystem operation without validation."
+      }
+    },
+    {
+      "attackPath": {
+        "change_conditions": "URL allowlisting, scheme restriction, blocking of private/internal IP ranges, or disabling user-provided URLs for server-side fetching.",
+        "counterevidence": null,
+        "dataflow": "Attacker-controlled req.query.url flows directly into http.get(url, ...) with no validation. The server issues outbound HTTP requests to arbitrary URLs.",
+        "decision": "reportable",
+        "evidenceRefs": [
+          "http-get-evidence"
+        ],
+        "impact": "Access internal network services, retrieve cloud instance metadata (including IAM credentials), perform port scanning, and potentially achieve account compromise.",
+        "likelihood": "high",
+        "reachability": "The /preview endpoint is publicly accessible without authentication. Any unauthenticated attacker can supply arbitrary URLs targeting internal services or cloud metadata.",
+        "severity": "high",
+        "severity_rationale": "Publicly accessible route with no authentication. SSRF against cloud metadata can yield IAM credentials leading to full cloud account compromise. Internal service access exposes sensitive APIs."
+      },
+      "codeEvidence": [
+        {
+          "code": "http.get(url, (upstream) => { ... })",
+          "endLine": 22,
+          "explanation": "User-controlled URL is passed directly to http.get() with no validation, allowing SSRF.",
+          "id": "http-get-evidence",
+          "label": "Unvalidated URL in outbound request",
+          "path": "src/server.js",
+          "startLine": 21
+        }
+      ],
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct evidence: req.query.url is passed directly to http.get() without any URL parsing, scheme validation, or allowlist check. The server acts as an HTTP client for arbitrary URLs."
+      },
+      "extensions": {
+        "candidateId": "candidate-795ebd44867f42a3"
+      },
+      "findingId": "csf_f24d1868cabeafdde73b1d2e",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:7919bad34fd3b5e085de2c807232c3294e2c3cedd4f230932edd0b18fd4d5362"
+      },
+      "identity": {
+        "anchor": "node-ssrf"
+      },
+      "locations": [
+        {
+          "endLine": 26,
+          "path": "src/server.js",
+          "role": "entrypoint",
+          "startLine": 20
+        },
+        {
+          "path": "src/server.js",
+          "role": "source",
+          "startLine": 21
+        },
+        {
+          "path": "src/server.js",
+          "role": "sink",
+          "startLine": 22
+        }
+      ],
+      "occurrenceId": "occ_ccd734dcfea76148f1982191",
+      "provenance": {
+        "source": "codex-security-plugin"
+      },
+      "remediation": "Implement URL validation: parse the URL, restrict to HTTPS scheme, maintain an allowlist of permitted hostnames, and block requests to private/internal IP ranges. Alternatively, disable direct user-provided URLs.",
+      "rootCause": {
+        "summary": "User-controlled input (req.query.url) flows directly into an outbound HTTP request (http.get) without validation, scheme restriction, or destination allowlisting."
+      },
+      "ruleId": "node-ssrf",
+      "severity": {
+        "level": "high",
+        "score": 8.0,
+        "scoringSystem": "codex-security-v1"
+      },
+      "summary": "The /preview endpoint passes req.query.url directly to http.get() without URL validation, scheme checking, or destination restrictions, allowing requests to internal services and cloud metadata endpoints.",
+      "taxonomy": {
+        "category": "network",
+        "cwe": [
+          "CWE-918"
+        ]
+      },
+      "title": "Server-Side Request Forgery in /preview endpoint",
+      "validation": {
+        "confidence": "high",
+        "confidence_rationale": "Direct evidence of unvalidated user input flowing into network request construction.",
+        "counterevidence_or_proof_gap": null,
+        "disposition": "reportable",
+        "evidence": "http.get() issues requests to any URL the attacker specifies, including internal services and cloud metadata.",
+        "evidenceRefs": [
+          "http-get-evidence"
+        ],
+        "method": "static analysis of URL handling and network request construction",
+        "remaining_uncertainty": null,
+        "rubric": "User-controlled input flows into an outbound network request without validation."
+      }
+    }
+  ],
+  "scanId": "4ca52945-7dc9-4de7-971a-e87b769d68d7",
+  "schemaVersion": "1.0"
+}

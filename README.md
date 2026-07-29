@@ -426,6 +426,39 @@ it yourself on any repository:
 cargo run -p puncode-security --example audit_target -- <dir>
 ```
 
+## Do the findings point at code that exists?
+
+Everything else that checks a scan checks it against itself. The seal says the
+documents are the ones that were sealed; the fingerprints say a finding was not
+renamed or moved between scans. **All of that holds perfectly for a finding
+citing `src/auth.py:184` in a repository where that file has ninety lines, or
+does not exist at all.**
+
+That is the cheapest hallucination there is to catch, and nothing was catching
+it. So a scan checks every location it produced against the code it just read:
+
+```
+Findings: 3 (1 high, 2 medium). Coverage: complete.
+1 finding(s) point at code that is not there. A location that does not resolve
+is not a judgement call — the file or the line is absent from the target.
+  SQL injection: src/auth.py has 90 line(s), and the finding cites 184
+```
+
+Two questions, both with exact answers: is the file there, and is the line
+inside it. `endLine` is checked as well as `startLine`, because a range running
+off the end is as wrong as a start past it and only one of the two would
+otherwise be noticed. A location that resolves is **not** a claim that the
+finding is right — it only rules out a finding about code that is not there.
+
+Measured across every scan on hand: **67 cited locations over two corpus runs,
+all of them resolved.** That is a real result and a weak test — the fixtures are
+single files of a few dozen lines each, which is the easy case. Check it against
+your own results:
+
+```sh
+cargo run -p puncode-security --example check_anchors -- <scan-dir> <target-dir>
+```
+
 ## Checking results you were handed
 
 ```sh
