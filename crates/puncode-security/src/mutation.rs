@@ -353,3 +353,109 @@ mod tests {
         assert!(!mutate("a.py", without)[0].source.ends_with('\n'));
     }
 }
+
+impl Mutant {
+    /// The mutant, stated as a planted flaw.
+    ///
+    /// Ground truth for a mutant is not a judgement anybody has to make: the
+    /// edit is the flaw and its line is where the edit was. This is the join to
+    /// [`crate::benchmark`], so a run over mutants scores the same way a run
+    /// over the fixture corpus does — same matcher, same class handling, same
+    /// range when the scan names a different weakness.
+    ///
+    /// An unconfirmed mutant carries its uncertainty into the corpus through
+    /// [`crate::benchmark::PlantedFlaw::found_not_planted`] and `why`, so a
+    /// score built on it cannot quietly read as a score over confirmed flaws.
+    #[must_use]
+    pub fn as_planted_flaw(&self) -> crate::benchmark::PlantedFlaw {
+        crate::benchmark::PlantedFlaw {
+            id: self.operator.to_owned(),
+            file: self.file.clone(),
+            lines: self.lines,
+            cwe: Some(self.cwe.to_owned()),
+            severity: Some(self.severity.to_owned()),
+            summary: Some(self.summary.to_owned()),
+            also: Vec::new(),
+            found_not_planted: false,
+            why: Some(match self.confirmed_by {
+                Some(confirmation) => format!(
+                    "Introduced by mutation, and confirmed to be a real flaw: {confirmation}"
+                ),
+                None => "Introduced by mutation. NOT CONFIRMED: an operator swaps a safe idiom \
+                         for an unsafe one, and whether untrusted input reaches it is not \
+                         something this can settle. A scan that misses it has missed a removed \
+                         protection, which is worth knowing, and not necessarily a vulnerability."
+                    .to_owned(),
+            }),
+        }
+    }
+}
+
+#[cfg(test)]
+mod ground_truth_tests {
+    use super::*;
+
+    fn control_fixture() -> String {
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/inventory-service/src/inventory.py"),
+        )
+        .expect("the control fixture")
+    }
+
+    /// The flaw a mutant states must be the edit it made, with no judgement in
+    /// between.
+    #[test]
+    fn a_mutant_states_itself_as_the_flaw_it_introduced() {
+        for mutant in mutate("src/inventory.py", &control_fixture()) {
+            let flaw = mutant.as_planted_flaw();
+
+            assert_eq!(flaw.id, mutant.operator);
+            assert_eq!(flaw.file, mutant.file);
+            assert_eq!(flaw.lines, mutant.lines);
+            assert_eq!(flaw.cwe.as_deref(), Some(mutant.cwe));
+        }
+    }
+
+    /// A confirmed mutant carries the attack that confirmed it, so a reader of
+    /// the corpus can see why it was believed.
+    #[test]
+    fn a_confirmed_mutant_carries_its_attack() {
+        let flaw = mutate("src/inventory.py", &control_fixture())[0].as_planted_flaw();
+
+        let why = flaw.why.expect("a reason");
+        assert!(why.contains("confirmed to be a real flaw"), "{why}");
+        assert!(why.contains("original"), "{why}");
+    }
+
+    /// And an unconfirmed one says so loudly, because a corpus that quietly
+    /// mixes the two produces a number nobody can read.
+    #[test]
+    fn an_unconfirmed_mutant_says_it_is_unconfirmed() {
+        let mut mutant = mutate("src/inventory.py", &control_fixture())[0].clone();
+        mutant.confirmed_by = None;
+
+        let why = mutant.as_planted_flaw().why.expect("a reason");
+
+        assert!(why.contains("NOT CONFIRMED"), "{why}");
+        assert!(why.contains("not necessarily a vulnerability"), "{why}");
+    }
+
+    /// The flaw round-trips through the corpus format the benchmark reads.
+    #[test]
+    fn the_flaw_survives_the_corpus_format() {
+        let flaw = mutate("src/inventory.py", &control_fixture())[0].as_planted_flaw();
+
+        let corpus = serde_json::json!({
+            "fixtures": [{
+                "name": "mutant",
+                "path": "mutants/bind-to-concat",
+                "flaws": [flaw],
+            }]
+        })
+        .to_string();
+
+        let parsed = crate::benchmark::GroundTruth::parse(&corpus).expect("parses");
+        assert_eq!(parsed.fixtures[0].flaws[0], flaw);
+    }
+}
