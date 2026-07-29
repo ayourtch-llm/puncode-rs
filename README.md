@@ -481,7 +481,12 @@ Scanning these three made the point better than the documentation did. Two were
 reported; the third was **deferred**, with the scan saying the command-injection
 sink "has no demonstrated exploitable path from untrusted input in the current
 codebase". That is the same objection this section makes, raised by the tool
-against the corpus — and it was right.
+against the corpus.
+
+Scanning that third mutant a second time reported it as high severity. Same
+code, same model, same flags — **deferred once, reported once**. The judgement
+was defensible; it was not consistent, and no single run of this scanner should
+be read as though it were.
 
 A mutant nobody has confirmed still measures something worth knowing — a
 protection was removed and the scanner said nothing — but it must not be read as

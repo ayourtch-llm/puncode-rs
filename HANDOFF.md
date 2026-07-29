@@ -77,41 +77,45 @@ findings, exit 0.
 
 ## Open
 
-1. **`link-service` and `kv-store` exit 2 for reasons that are not detection
-   failures.** `link-service` completes fully and exits 2 because coverage is
-   `partial` — it found and reported everything it meant to. `kv-store` fails at
-   the very end with "The sealed scan manifest changed while it was being
-   published", after all the work is done. Neither is a missed flaw, and reading
-   the exit code alone would suggest otherwise.
-2. **`report.md` finalisation is flaky.** Detection is reliable; the agent
-   sometimes stops before running `finalize_scan_contract.py`, leaving an
-   otherwise-good scan at exit 2. Last gap between "finds the bugs" and "clean
-   exit 0". Likely the same class as the scope/contract fixes.
-3. **No control run against a stronger model.** Everything concluded about model
-   behaviour comes from one local model over ~10 runs. A hosted run would
-   separate general behaviour from this model's habits.
-4. **`--exclude` cannot exist, and that is settled.** It was recorded here as
-   "if it is ever added…". It cannot be. `scan_contract` returns
-   `"requiredExcludePaths": []` as a literal, and the check is literal too:
+Genuinely open. Things that were once here and are now settled moved into the
+sections that settled them — an "open" list that keeps closed items is one
+nobody trusts.
 
-   ```python
-   # workbench_db.py:722
-   if scope.get("excludePaths") != []:
-       raise SystemExit("scan-manifest.json scope excludePaths must match ...")
-   ```
+1. **No control run against a stronger model.** Everything concluded about model
+   behaviour comes from one local model over roughly fifty scans. A hosted run
+   would separate general behaviour from this model's habits. **Cannot be done
+   with what is here.**
+2. **The sealed-manifest prompt instruction holds one time in two.** Measured on
+   exactly the two fixtures that failed that way: `orders-api-b` saved cleanly,
+   `link-service` invented a `sealedAt` again. Expect it to recur.
+3. **Upstream feedback is written and unsent.**
+   [docs/upstream-report.md](docs/upstream-report.md) has every claim re-checked
+   against the shipped package. This checkout has no way to open an issue.
+4. **Run-to-run variance is unquantified.** It keeps turning out to be the
+   largest single effect — see the mutation results — and there is no measurement
+   of it beyond anecdotes. `scan --repeat` and `consensus` exist; nobody has
+   pointed them at one target enough times to put a number on it.
 
-   No scan may carry a non-empty `excludePaths` at all. So the hard-coded `[]`
-   in `prompt.rs` is not a latent bug waiting on a feature — it is the only legal
-   value, and the prompt line telling the agent so is load-bearing. Adding
-   `--exclude` needs an upstream change first, which is in
-   [docs/upstream-report.md](docs/upstream-report.md).
-5. **Upstream feedback.** Written up in [docs/upstream-report.md](docs/upstream-report.md),
-   with every claim re-checked against the shipped package rather than recalled:
-   `allowedKinds` appears in one file and no skill, 0 of 141 schema properties
-   carry a description, and the scope contract's own fields are named
-   `requiredIncludePaths`/`requiredExcludePaths` while the schemas say only
-   `{"type": "array"}`. **Still to send** — this checkout has no way to open an
-   issue.
+### Closed since these notes began
+
+- **Exit 2 for reasons that are not detection failures** — all three causes are
+  named and diagnosed; see *When a scan will not save*.
+- **`report.md` finalisation flakiness** — checked across every scan on disk:
+  **2 of 46 lack `report.md`, and both predate the finalization instructions in
+  `prompt.rs`.** Not reproduced since.
+- **`--exclude`** — it cannot exist. `scan_contract` returns
+  `"requiredExcludePaths": []` as a literal and the check is literal too:
+
+  ```python
+  # workbench_db.py:722
+  if scope.get("excludePaths") != []:
+      raise SystemExit("scan-manifest.json scope excludePaths must match ...")
+  ```
+
+  No scan may carry a non-empty `excludePaths`. So the hard-coded `[]` in
+  `prompt.rs` is not a latent bug waiting on a feature — it is the only legal
+  value, and the prompt line telling the agent so is load-bearing. Adding the
+  flag needs an upstream change, which the upstream report asks for.
 
 # Running it on this machine
 
@@ -813,10 +817,31 @@ operators, and the scanner objected to exactly that on the one where it matters
 most. The strings now say "direct call: this shows the sink executes, not that
 untrusted input reaches it".
 
-Two of the three were reported anyway, which is the scanner making a different
-call about an unsafe sink in library code than it made for the third. Whether
-that inconsistency is a defect is a judgement about reporting policy, not
-something these three runs settle.
+### It was variance, not policy — measured
+
+`list-to-shell` was scanned a second time, same code, same model, same flags:
+
+| Run | Findings | Coverage | Deferred |
+|---|---|---|---|
+| first | 0 | partial | 1, on reachability |
+| second | **1, CWE-78, high** | complete | 0 |
+
+So the deferral was **not a reporting policy about unsafe sinks in library
+code**. The same input produced a reasoned deferral once and a high-severity
+finding the next time. My previous note framed it as the scanner drawing a
+consistent distinction; it does not.
+
+The deferral was still a defensible judgement — nothing untrusted demonstrably
+reaches `compress_export` — and the correction to my own `confirmed_by` strings
+stands, because that correction was about what my attacks proved, not about what
+the scanner did.
+
+**This is the finding that keeps recurring here.** CWE-208 detected once in
+seven runs; `kv-store` scoring 2, 3 and 4 of 4 on identical code; and now the
+same mutant deferred and reported. Run-to-run variance is larger than most of
+the capability distinctions this project has drawn, and any single-run result —
+including all three mutant results above — should be read with that in front of
+it.
 
 ### The prediction that was wrong, and the better statement
 
