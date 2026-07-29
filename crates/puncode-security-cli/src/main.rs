@@ -87,6 +87,31 @@ fn skill(
     }
 }
 
+/// Says when a saved scan's results are no longer on disk.
+///
+/// The record outlives the files. `scans show` reports the scan as complete
+/// with its finding count and the directory it was written to, and an empty
+/// `artifacts` object — which is correct and easy to read past. Thirty-six of
+/// ninety-two scans recorded on this machine are in that state.
+///
+/// Written to stderr so the JSON payload stays exactly what the plugin
+/// produced.
+fn vanished_results_note(report: &str) -> Vec<String> {
+    let Ok(document) = serde_json::from_str::<serde_json::Value>(report) else {
+        return Vec::new();
+    };
+    let Some(scan_dir) = document["scanDir"].as_str() else {
+        return Vec::new();
+    };
+    if std::path::Path::new(scan_dir).is_dir() {
+        return Vec::new();
+    }
+    vec![format!(
+        "The results are no longer at {scan_dir}. The workbench keeps the record after the files \
+         are gone, so the finding count above is from a directory that is not there."
+    )]
+}
+
 /// Translates a plugin message that names a command this build does not have.
 ///
 /// The plugin is somebody else's software, verified by digest, and its text is
@@ -716,7 +741,11 @@ fn main() -> std::process::ExitCode {
             commands::history::list(options, &history_context())
         }
         Command::Scans(ScansCommand::Show(options)) => {
-            commands::history::show(options, &history_context())
+            commands::history::show(options, &history_context()).inspect(|report| {
+                for line in vanished_results_note(report) {
+                    eprintln!("puncode-security: {line}");
+                }
+            })
         }
         Command::Scans(ScansCommand::Compare(options)) => {
             commands::history::compare(options, &history_context())
@@ -845,6 +874,50 @@ mod renamed_command_tests {
             "The $codex-security:validation skill is missing.",
         ] {
             assert!(renamed_command_note(message).is_empty(), "{message}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod vanished_results_tests {
+    use super::vanished_results_note;
+
+    /// The record outlives the files, and "complete, 2 findings" beside an
+    /// empty artifacts object reads as retrievable.
+    #[test]
+    fn says_when_the_results_are_gone() {
+        let report = serde_json::json!({
+            "scanDir": "/does/not/exist",
+            "findingCount": 2,
+            "artifacts": {},
+        })
+        .to_string();
+
+        let note = vanished_results_note(&report);
+
+        assert_eq!(note.len(), 1, "{note:?}");
+        assert!(note[0].contains("/does/not/exist"), "{note:?}");
+        assert!(note[0].contains("no longer"), "{note:?}");
+    }
+
+    /// Silent when the directory is there, or it fires on every scan.
+    #[test]
+    fn says_nothing_when_the_results_are_present() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let report = serde_json::json!({
+            "scanDir": directory.path().to_string_lossy(),
+            "findingCount": 2,
+        })
+        .to_string();
+
+        assert!(vanished_results_note(&report).is_empty());
+    }
+
+    /// A payload with no directory, or one that is not JSON, claims nothing.
+    #[test]
+    fn says_nothing_about_a_payload_it_cannot_read() {
+        for report in ["not json", "{}", r#"{"scanDir":null}"#] {
+            assert!(vanished_results_note(report).is_empty(), "{report}");
         }
     }
 }
