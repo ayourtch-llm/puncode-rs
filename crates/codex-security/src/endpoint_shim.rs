@@ -10,9 +10,14 @@
 //!
 //! Every adaptation here is opt-in and named for the incompatibility it works
 //! around, because silently rewriting what the model is asked is not something
-//! that should happen by default. Nothing in this module inspects, stores or
-//! logs the content it passes through: it moves text between fields and hands
-//! it on.
+//! that should happen by default.
+//!
+//! By default nothing here inspects, stores or logs what it passes through: it
+//! moves text between fields and hands it on. A caller may ask for a traffic
+//! capture, and then it writes what passed through to a file that caller named.
+//! That file holds the prompts, the model's answers, and the source under
+//! review, so it is never written unless asked for and never created anywhere
+//! but where it was asked for.
 
 use serde_json::Value;
 
@@ -107,8 +112,9 @@ fn item_text(item: &Value) -> Vec<String> {
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::error::{Error, Result};
 
@@ -116,6 +122,80 @@ use crate::error::{Error, Result};
 ///
 /// A body beyond this is passed through untouched rather than held in memory.
 const MAX_ADAPTED_BODY: usize = 32 * 1_024 * 1_024;
+
+/// The most of one body that is written to a capture.
+///
+/// Anything longer is cut and *said* to be cut. A truncation that is not
+/// announced reads as a complete record and is worse than none.
+const MAX_CAPTURED_BODY: usize = 1_024 * 1_024;
+
+/// A record of what passed through, for diagnosing an endpoint.
+///
+/// This writes the prompts, the model's answers, and the source excerpts they
+/// carry. It exists only when explicitly asked for, and the file is created
+/// private to its owner.
+#[derive(Debug)]
+struct Capture {
+    file: Mutex<std::fs::File>,
+}
+
+impl Capture {
+    /// Opens `path`, replacing anything already there.
+    fn open(path: &Path) -> Result<Self> {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            // Readable only by its owner: this holds source under review.
+            .mode(0o600)
+            .open(path)
+            .map_err(|error| {
+                Error::configuration(format!(
+                    "Could not open the traffic capture {}: {error}",
+                    path.display()
+                ))
+            })?;
+        Ok(Self {
+            file: Mutex::new(file),
+        })
+    }
+
+    /// Records one body.
+    fn record(&self, direction: &str, path: &str, status: Option<u16>, body: &[u8]) {
+        let truncated = body.len() > MAX_CAPTURED_BODY;
+        let kept = if truncated {
+            &body[..MAX_CAPTURED_BODY]
+        } else {
+            body
+        };
+        let entry = serde_json::json!({
+            "direction": direction,
+            "path": path,
+            "status": status,
+            "truncated": truncated,
+            "bytes": body.len(),
+            "body": String::from_utf8_lossy(kept),
+        });
+        // A capture that cannot be written must not take the scan down with it.
+        if let Ok(mut file) = self.file.lock() {
+            let _ = writeln!(file, "{entry}");
+            let _ = file.flush();
+        }
+    }
+}
+
+/// How the forwarder should behave.
+#[derive(Debug, Clone, Default)]
+pub struct ShimOptions {
+    /// What to change about each request.
+    pub adaptations: Adaptations,
+    /// Where to record the traffic, when that was asked for.
+    ///
+    /// Absent by default. See [`Capture`] for what a present value writes.
+    pub capture: Option<PathBuf>,
+}
 
 /// A local forwarder that adapts requests on their way to an endpoint.
 ///
@@ -132,8 +212,15 @@ impl EndpointShim {
     ///
     /// `upstream` is the endpoint's base URL; the path of each request is
     /// appended to its origin.
-    pub fn start(upstream: &str, adaptations: Adaptations) -> Result<Self> {
+    pub fn start(upstream: &str, options: &ShimOptions) -> Result<Self> {
         let upstream = upstream.trim_end_matches('/').to_owned();
+        let adaptations = options.adaptations;
+        // Opened before listening, so a destination that cannot be written is
+        // reported now rather than discovered mid-scan.
+        let capture = match &options.capture {
+            Some(path) => Some(Arc::new(Capture::open(path)?)),
+            None => None,
+        };
 
         // Loopback only: this exists for the Codex process on this machine.
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|error| {
@@ -152,10 +239,12 @@ impl EndpointShim {
                 }
                 let Ok(connection) = connection else { continue };
                 let upstream = upstream.clone();
+                let capture = capture.clone();
                 // A scan runs several agents at once, so connections are served
                 // concurrently rather than one after another.
                 std::thread::spawn(move || {
-                    let _ = serve_connection(connection, &upstream, adaptations);
+                    let _ =
+                        serve_connection(connection, &upstream, adaptations, capture.as_deref());
                 });
             }
         });
@@ -183,6 +272,7 @@ fn serve_connection(
     mut connection: TcpStream,
     upstream: &str,
     adaptations: Adaptations,
+    capture: Option<&Capture>,
 ) -> std::io::Result<()> {
     let mut reader = BufReader::new(connection.try_clone()?);
 
@@ -230,6 +320,10 @@ fn serve_connection(
         }
     }
 
+    if let Some(capture) = capture {
+        capture.record("request", &path, None, &body);
+    }
+
     let target = format!("{upstream}{path}");
     let mut outbound = ureq::http::Request::builder()
         .method(method.as_str())
@@ -261,6 +355,9 @@ fn serve_connection(
         Err(error) => {
             let message = format!("endpoint unreachable: {error}");
             let payload = serde_json::json!({ "error": { "message": message } }).to_string();
+            if let Some(capture) = capture {
+                capture.record("response", &path, Some(502), payload.as_bytes());
+            }
             connection.write_all(
                 format!(
                     "HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
@@ -294,17 +391,28 @@ fn serve_connection(
 
     let mut source = response.into_body().into_reader();
     let mut buffer = [0u8; 8 * 1_024];
+    // Collected alongside the stream rather than instead of it, and only up to
+    // what would be written anyway.
+    let mut recorded: Option<Vec<u8>> = capture.map(|_| Vec::new());
     loop {
         let read = match source.read(&mut buffer) {
             Ok(0) => break,
             Ok(read) => read,
             Err(_) => break,
         };
+        if let Some(recorded) = recorded.as_mut()
+            && recorded.len() < MAX_CAPTURED_BODY
+        {
+            recorded.extend_from_slice(&buffer[..read]);
+        }
         if connection.write_all(&buffer[..read]).is_err() {
             break;
         }
         // Flushed per chunk so each event reaches Codex as it arrives.
         let _ = connection.flush();
+    }
+    if let (Some(capture), Some(recorded)) = (capture, recorded) {
+        capture.record("response", &path, Some(status), &recorded);
     }
     let _ = connection.shutdown(Shutdown::Both);
     Ok(())

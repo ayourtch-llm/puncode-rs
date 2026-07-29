@@ -9,12 +9,14 @@
 
 use std::path::{Path, PathBuf};
 
+use codex_security::ProtectedScanPathKind;
+use codex_security::api::require_output_outside_repository;
 use codex_security::api::{
     ApiKeySource, CodexSecurity, ScanAuthentication, ScanCancellation, ScanObserver, ScanOptions,
     ScanPreflight,
 };
 use codex_security::config::CodexSecurityConfig;
-use codex_security::endpoint_shim::{Adaptations, EndpointShim};
+use codex_security::endpoint_shim::{Adaptations, EndpointShim, ShimOptions};
 use codex_security::models::Completeness;
 use codex_security::result::ScanResult;
 use codex_security::targets::{DiffTarget, ScanMode, ScanTarget};
@@ -46,12 +48,14 @@ pub fn dry_run(arguments: &ScanArgs, current_directory: &Path) -> Result<String,
     })
 }
 
-/// The configuration a scan runs under.
+/// The forwarder to run in front of the endpoint, if one is needed at all.
 ///
-/// `--model` and `--codex model=…` say the same thing, so naming both is a
-/// contradiction the override parser refuses rather than silently resolving.
-/// The forwarder to run in front of the endpoint, if any adaptation was asked for.
-fn endpoint_adapter(arguments: &ScanArgs) -> Result<Option<EndpointShim>, String> {
+/// Needed when a request has to be reshaped, and also when the traffic is being
+/// recorded — the forwarder is the only place that sees it.
+fn endpoint_adapter(
+    arguments: &ScanArgs,
+    repository: &Path,
+) -> Result<Option<EndpointShim>, String> {
     let Some(base_url) = &arguments.base_url else {
         return Ok(None);
     };
@@ -60,14 +64,54 @@ fn endpoint_adapter(arguments: &ScanArgs) -> Result<Option<EndpointShim>, String
             .endpoint_compat
             .contains(&crate::cli::EndpointCompat::MergeSystem),
     };
-    if !adaptations.any() {
+    if !adaptations.any() && arguments.capture_traffic.is_none() {
         return Ok(None);
     }
-    EndpointShim::start(base_url, adaptations)
-        .map(Some)
-        .map_err(|error| error.to_string())
+
+    let capture = match &arguments.capture_traffic {
+        Some(path) => {
+            let path = if path.is_absolute() {
+                path.clone()
+            } else {
+                std::env::current_dir()
+                    .map_err(|error| error.to_string())?
+                    .join(path)
+            };
+            // The capture carries source excerpts and the findings drawn from
+            // them; writing it into the tree under review would mix it into the
+            // very thing being scanned. Scan output is refused here for the same
+            // reason.
+            require_output_outside_repository(
+                repository,
+                path.parent().unwrap_or(&path),
+                ProtectedScanPathKind::Output,
+            )
+            .map_err(|error| error.to_string())?;
+            eprintln!(
+                "codex-security: Recording endpoint traffic to {}. It will contain prompts, \
+                 model output, and source from the repository.",
+                path.display()
+            );
+            Some(path)
+        }
+        None => None,
+    };
+
+    EndpointShim::start(
+        base_url,
+        &ShimOptions {
+            adaptations,
+            capture,
+        },
+    )
+    .map(Some)
+    .map_err(|error| error.to_string())
 }
 
+/// The configuration a scan runs under.
+///
+/// `--model` and `--codex model=…` say the same thing, so naming both is a
+/// contradiction the override parser refuses rather than silently resolving.
 fn config(arguments: &ScanArgs, endpoint: Option<&str>) -> Result<CodexSecurityConfig, String> {
     let mut overrides =
         crate::overrides::parse_codex_overrides(&arguments.codex, arguments.model.as_deref())?;
@@ -324,7 +368,7 @@ pub fn run(
     // Requests are adapted by a forwarder on this machine; the scan is pointed
     // at it instead of the endpoint. It is held for the whole scan and shuts
     // down when this returns.
-    let adapter = endpoint_adapter(arguments)?;
+    let adapter = endpoint_adapter(arguments, current_directory)?;
     let client = CodexSecurity::new(config(
         arguments,
         adapter.as_ref().map(EndpointShim::base_url).as_deref(),

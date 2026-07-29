@@ -111,6 +111,7 @@ pub fn scan_arguments(recipe: Option<&Value>, parent_scan_id: &str) -> Result<Sc
         // reconstructed from a flag that was never typed.
         base_url: None,
         endpoint_compat: Vec::new(),
+        capture_traffic: None,
         wire_api: crate::cli::WireApi::default(),
         api_key_env: "OPENAI_API_KEY".to_owned(),
         repository: Some(repository.into()),

@@ -219,6 +219,13 @@ pub struct ScanArgs {
         requires = "base_url"
     )]
     pub endpoint_compat: Vec<EndpointCompat>,
+    /// Record endpoint traffic to FILE for diagnosis.
+    ///
+    /// Writes the prompts, the model's answers, and the source excerpts they
+    /// carry. The file is created readable only by you, and may not be placed
+    /// inside the repository being scanned.
+    #[arg(long, value_name = "FILE", requires = "base_url")]
+    pub capture_traffic: Option<PathBuf>,
     /// Environment variable holding the endpoint's API key.
     #[arg(
         long,
