@@ -34,6 +34,27 @@ Expected: **3 findings**.
 Verified to misbehave rather than merely look wrong: a long argument trips stack
 smashing detection, and the freed entry is read by a later lookup.
 
+## node-traversal
+
+A small Express file server and link previewer.
+
+| Where | Flaw |
+|---|---|
+| `/file` | Path traversal — `path.join` with an unvalidated `?name=` |
+| `/preview` | SSRF — server-side fetch of an arbitrary `?url=` |
+| `/admin` | Timing-unsafe token comparison |
+
+Expected: **3 findings**.
+
+## clean-python
+
+An inventory service with **nothing planted**: parameterised queries, no shell,
+no user-controlled paths. Anything reported here is a false positive. This
+fixture exists because recall alone says nothing about whether a scanner is
+worth running.
+
+Expected: **0 findings**.
+
 ## Running them
 
 ```sh

@@ -117,6 +117,29 @@ fn target_contract_instructions() -> [String; 2] {
     ]
 }
 
+/// Says that writing the canonical JSON is not the end of the scan.
+///
+/// Not upstream. The skill offers two ways to finish — an MCP tool "when
+/// available", otherwise a script — and this host has no MCP tools, so only the
+/// script applies. An agent that has written findings, coverage and the
+/// manifest reasonably believes it is done: the manifest even says `completed`.
+/// But `report.md` is a required artifact, so the scan is then rejected for
+/// missing it, having done all the work correctly.
+fn finalization_instructions() -> [String; 2] {
+    [
+        "Writing scan-manifest.json, findings.json and coverage.json does not finish the scan. \
+         The scan is unfinished until report.md exists in \"$CODEX_SECURITY_SCAN_DIR\", and \
+         report.md is produced only by the finalization command below — never write it by hand."
+            .to_owned(),
+        "There is no complete_codex_security_scan tool on this host, so finish by running \
+         \"$PYTHON\" \"$CODEX_SECURITY_PLUGIN_ROOT/scripts/finalize_scan_contract.py\" \
+         --scan-dir \"$CODEX_SECURITY_SCAN_DIR\" --source-root \"$CODEX_SECURITY_REPOSITORY\", \
+         once, after the canonical JSON is written. Do not report the scan as complete until \
+         that command has succeeded and report.md is present."
+            .to_owned(),
+    ]
+}
+
 /// Builds the scan instruction, confirming the skill it names is installed.
 pub fn scan_prompt(
     plugin_root: &Path,
@@ -181,6 +204,7 @@ pub fn scan_prompt(
     // stated the same way the target ID already is.
     lines.extend(scope_instructions(target));
     lines.extend(target_contract_instructions());
+    lines.extend(finalization_instructions());
 
     if has_config_path {
         lines.push(

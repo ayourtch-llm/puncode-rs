@@ -4,6 +4,7 @@
 //! printing and the exit code to `main`. That keeps the commands testable
 //! without a process and keeps process I/O in one place.
 
+pub mod bench;
 pub mod bulk_scan;
 pub mod export;
 pub mod github;

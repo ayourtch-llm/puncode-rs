@@ -274,6 +274,12 @@ fn main() -> std::process::ExitCode {
     let outcome = match command {
         Command::Info(options) => commands::info::run(options),
         Command::Logout => commands::logout::run(&std::env::vars().collect()),
+        Command::Bench(options) => commands::bench::run(
+            &options.ground_truth,
+            &options.results,
+            &options.corpus_root,
+        )
+        .map(|outcome| commands::bench::render(&outcome)),
         Command::Export(options) => return export(options),
         Command::BulkScan(options) => commands::bulk_scan::run(
             options,

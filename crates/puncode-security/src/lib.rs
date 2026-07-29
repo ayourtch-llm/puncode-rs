@@ -6,6 +6,7 @@
 
 pub mod api;
 pub mod auth;
+pub mod benchmark;
 pub mod bulk_scan_discovery;
 pub mod codex;
 pub mod config;

@@ -1,0 +1,98 @@
+{
+  "note": "Ground truth for the fixture corpus. Kept outside fixtures/ on purpose: a scan reads its whole target, and a file listing the answers would turn detection into reading. Line numbers are where the flaw is expressed, not where it is reachable from.",
+  "fixtures": [
+    {
+      "name": "flask-injection",
+      "path": "fixtures/flask-injection",
+      "language": "python",
+      "flaws": [
+        {
+          "id": "sqli-user",
+          "file": "src/app.py",
+          "lines": [10, 10],
+          "cwe": "CWE-89",
+          "severity": "high",
+          "summary": "SQL query concatenated from the ?name= request parameter"
+        },
+        {
+          "id": "cmdi-ping",
+          "file": "src/app.py",
+          "lines": [15, 15],
+          "cwe": "CWE-78",
+          "severity": "critical",
+          "summary": "subprocess with shell=True and the ?host= request parameter"
+        }
+      ]
+    },
+    {
+      "name": "c-memory",
+      "path": "fixtures/c-memory",
+      "language": "c",
+      "flaws": [
+        {
+          "id": "stack-overflow",
+          "file": "src/store.c",
+          "lines": [23, 23],
+          "cwe": "CWE-121",
+          "severity": "critical",
+          "summary": "strcpy into a 32-byte stack buffer from an unchecked argument"
+        },
+        {
+          "id": "use-after-free",
+          "file": "src/store.c",
+          "lines": [33, 36],
+          "cwe": "CWE-416",
+          "severity": "high",
+          "summary": "entry freed but left in the table, then read by a later lookup"
+        },
+        {
+          "id": "off-by-one",
+          "file": "src/store.c",
+          "lines": [54, 54],
+          "cwe": "CWE-193",
+          "severity": "medium",
+          "summary": "bound uses > so index MAX_RECORDS is admitted, one past the last slot"
+        }
+      ]
+    },
+    {
+      "name": "node-traversal",
+      "path": "fixtures/node-traversal",
+      "language": "javascript",
+      "flaws": [
+        {
+          "id": "path-traversal",
+          "file": "src/server.js",
+          "lines": [12, 14],
+          "cwe": "CWE-22",
+          "severity": "high",
+          "summary": "path.join with an unvalidated ?name=, so ../ escapes the public root"
+        },
+        {
+          "id": "ssrf-preview",
+          "file": "src/server.js",
+          "lines": [22, 23],
+          "cwe": "CWE-918",
+          "severity": "high",
+          "summary": "server-side request to an arbitrary ?url=, reachable to internal addresses"
+        },
+        {
+          "id": "timing-unsafe-compare",
+          "file": "src/server.js",
+          "lines": [35, 35],
+          "cwe": "CWE-208",
+          "severity": "low",
+          "summary": "admin token compared with === rather than a constant-time comparison"
+        }
+      ]
+    },
+    {
+      "name": "clean-python",
+      "path": "fixtures/clean-python",
+      "language": "python",
+      "flaws": [],
+      "control": true,
+      "why": "Nothing is planted here. Parameterised queries, no shell, no user-controlled paths. Anything reported against this fixture is a false positive, and that number decides whether the tool is worth running."
+    }
+  ]
+}

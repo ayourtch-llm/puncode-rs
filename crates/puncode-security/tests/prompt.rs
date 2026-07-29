@@ -48,6 +48,8 @@ fn is_scope_extension(line: &str) -> bool {
     (line.starts_with("Use exactly [") && line.contains("scan.scope."))
         || line.starts_with("Before writing scan-manifest.json, read the workbench")
         || line.starts_with("From the same contract,")
+        || line.starts_with("Writing scan-manifest.json, findings.json and coverage.json")
+        || line.starts_with("There is no complete_codex_security_scan tool")
 }
 
 fn plugin_root() -> (TempDir, PathBuf) {
@@ -398,4 +400,43 @@ fn still_reads_the_contract_for_a_diff_scan() {
 
     assert!(!prompt.contains("scan.scope.includePaths"), "{prompt}");
     assert!(prompt.contains("contract.target.allowedKinds"), "{prompt}");
+}
+
+/// A scan that found everything and wrote the canonical JSON still fails if
+/// report.md is missing, and the agent has no reason to know that: the manifest
+/// it just wrote says "completed". Observed on both fixtures.
+#[test]
+fn says_the_scan_is_unfinished_until_the_report_exists() {
+    let target = NormalizedTarget {
+        kind: Some(NormalizedTargetKind::Repository),
+        ..NormalizedTarget::default()
+    };
+    let (_temp, root) = plugin_root();
+
+    let prompt = scan_prompt(&root, &target, ScanMode::Standard, false, false).expect("a prompt");
+
+    assert!(prompt.contains("does not finish the scan"), "{prompt}");
+    assert!(prompt.contains("finalize_scan_contract.py"), "{prompt}");
+    assert!(
+        prompt.contains("never write it by hand"),
+        "report.md must come from the command, not the model: {prompt}"
+    );
+}
+
+/// The skill's other route needs a tool this host does not have, so the agent
+/// is told which of the two applies rather than left to discover it.
+#[test]
+fn rules_out_the_finalization_route_this_host_cannot_take() {
+    let target = NormalizedTarget {
+        kind: Some(NormalizedTargetKind::Repository),
+        ..NormalizedTarget::default()
+    };
+    let (_temp, root) = plugin_root();
+
+    let prompt = scan_prompt(&root, &target, ScanMode::Standard, false, false).expect("a prompt");
+
+    assert!(
+        prompt.contains("no complete_codex_security_scan tool on this host"),
+        "{prompt}"
+    );
 }

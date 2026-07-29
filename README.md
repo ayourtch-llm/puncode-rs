@@ -136,6 +136,54 @@ different `--output-dir`. Emptying the old one is not enough — the record
 outlives the files, and `--archive-existing` does not help either. The fixture
 runner stamps its output directory per run for this reason.
 
+## Measuring whether it works
+
+A scan produces findings. Whether they are the *right* ones is a separate
+question, and one nobody running a scanner can usually answer.
+
+`benchmark/ground-truth.json` records every flaw planted in the corpus — file,
+line range, CWE, severity — and `bench` scores a set of scans against it:
+
+```sh
+./scripts/scan-fixtures.sh --local http://host:8080/v1 --model my-model
+puncode-security bench /tmp/puncode-fixture-scans/<run>
+```
+
+```
+Detection
+
+  flask-injection      2 of 2 found
+  c-memory             2 of 3 found   missed: off-by-one
+  node-traversal       2 of 3 found   missed: timing-unsafe-compare
+  clean-python         control — 0 false positive(s)
+
+  detection      75%  (6 of 8)
+  unmatched      1  (0 on fixtures with nothing planted)
+
+By class
+
+  CWE-22           1 of 1
+  CWE-416          1 of 1
+  CWE-193          0 of 1
+```
+
+Three deliberate choices:
+
+- **Matching is by location, never by wording.** A model saying "OS command
+  injection" and one saying "unsafe subprocess invocation" have found the same
+  flaw; scoring on titles would measure vocabulary.
+- **The corpus contains a fixture with nothing planted in it.** Anything
+  reported there is a false positive, and that number decides whether anyone
+  keeps the tool switched on — a scanner that cries wolf gets ignored, and then
+  it finds nothing at all.
+- **A rate over nothing is reported as unmeasured, not as zero.** They are
+  different facts, and zero reads as total failure.
+
+One finding can claim only one flaw and one flaw only one finding, so neither a
+single vague report nor ten copies of the same one can inflate the score.
+Ground truth lives outside the fixtures, always: with the answers inside, an
+early run scored 2/2 and 3/3 and measured nothing at all.
+
 ## Naming
 
 The crates, the binary and this project are named `puncode-security`. Names

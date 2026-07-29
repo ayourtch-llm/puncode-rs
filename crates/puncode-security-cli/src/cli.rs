@@ -53,6 +53,8 @@ pub enum Command {
     Info(InfoArgs),
     /// Install a Git hook that scans before pushing.
     InstallHook(InstallHookArgs),
+    /// Score scans against a corpus of known flaws.
+    Bench(BenchArgs),
 }
 
 /// A known incompatibility to work around when talking to an endpoint.
@@ -64,6 +66,26 @@ pub enum EndpointCompat {
     /// For servers whose chat template permits exactly one system message and
     /// refuse a request carrying more.
     MergeSystem,
+}
+
+/// Scoring scans against a corpus of known flaws.
+#[derive(Debug, Args)]
+pub struct BenchArgs {
+    /// Directory holding one scan output directory per fixture.
+    #[arg(value_name = "RESULTS")]
+    pub results: PathBuf,
+    /// The corpus description.
+    #[arg(
+        long,
+        value_name = "FILE",
+        default_value = "benchmark/ground-truth.json"
+    )]
+    pub ground_truth: PathBuf,
+    /// Root the corpus paths are relative to.
+    #[arg(long, value_name = "DIR", default_value = ".")]
+    pub corpus_root: PathBuf,
+    #[command(flatten)]
+    pub output: OutputOptions,
 }
 
 /// Request shape an OpenAI-compatible endpoint speaks.
