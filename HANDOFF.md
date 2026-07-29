@@ -421,7 +421,13 @@ rather than read, and then a real failure gets rerun too.
   three runs with old code after I had "fixed" it. Kill and prove the new code
   is live.
 - **`pkill -f <pattern>` matches your own shell** if the pattern appears in its
-  command line. It killed a scan I had just started.
+  command line. It killed a scan I had just started. The same trap came back in
+  a worse form: `until ! pgrep -f "scan-fixtures.sh"; do sleep 20; done` never
+  terminates, because the waiting shell's own command line contains the pattern.
+  Five of those were left spinning across sessions, and one of them made a
+  finished run look like a running one, which nearly stopped a beat's work.
+  **Wait on the artefact, not the process** — `until grep -q "score this run"
+  <log>` cannot match itself.
 - **Match error patterns against captured output, never invented strings.** The
   unreachable-endpoint recogniser was written against "connection refused" and
   never fired; codex actually says `error sending request for url`.
