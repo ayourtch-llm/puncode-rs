@@ -14,7 +14,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Outside the repository on purpose: a fixture lives inside this checkout, so
 # the checkout is the protected scan root and results may not be written into it.
-OUT="${OUT_DIR:-${TMPDIR:-/tmp}/puncode-fixture-scans}"
+#
+# Stamped per run because the workbench registers a scan against its output
+# directory and refuses to register a second one there. Reusing a path works
+# exactly once and then fails on a UNIQUE constraint.
+OUT="${OUT_DIR:-${TMPDIR:-/tmp}/puncode-fixture-scans/$(date +%Y%m%d-%H%M%S)}"
 BIN="${PUNCODE_BIN:-$ROOT/target/debug/puncode-security}"
 BASE_URL="" MODEL="" EXTRA=()
 

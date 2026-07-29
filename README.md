@@ -129,6 +129,13 @@ Run a scan against both and compare against the expected counts:
 It exits non-zero if any fixture reports fewer findings than are planted, so a
 scan that quietly stops working is visible.
 
+### Scanning the same target twice
+
+The workbench records one scan per output directory, so a second scan needs a
+different `--output-dir`. Emptying the old one is not enough — the record
+outlives the files, and `--archive-existing` does not help either. The fixture
+runner stamps its output directory per run for this reason.
+
 ## Naming
 
 The crates, the binary and this project are named `puncode-security`. Names

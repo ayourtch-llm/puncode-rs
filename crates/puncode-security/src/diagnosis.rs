@@ -35,6 +35,8 @@ pub enum Cause {
     EndpointRejectedKey,
     /// The endpoint does not serve the model asked for.
     ModelNotServed,
+    /// A scan is already recorded against this output directory.
+    OutputDirectoryAlreadyScanned,
 }
 
 impl Cause {
@@ -71,6 +73,12 @@ impl Cause {
             Self::ModelNotServed => {
                 "The endpoint does not serve the model that was asked for. Check --model against \
                  what the server lists."
+            }
+            Self::OutputDirectoryAlreadyScanned => {
+                "A scan is already recorded against this output directory, and the workbench \
+                 keeps one scan per directory. Emptying it is not enough — the record survives \
+                 the files, so deleting them or using --archive-existing will not help. Scan \
+                 again with a different --output-dir."
             }
         }
     }
@@ -137,6 +145,11 @@ pub fn recognise_from(text: &str, origin: Origin) -> Option<Cause> {
         || lowered.contains("403 forbidden")
     {
         return Some(Cause::EndpointRejectedKey);
+    }
+    // The plugin reports this as a raw sqlite traceback, which reads as a bug in
+    // the tool rather than a directory that has been used before.
+    if lowered.contains("unique constraint failed: scans.scan_dir") {
+        return Some(Cause::OutputDirectoryAlreadyScanned);
     }
     if lowered.contains("model_not_found")
         || lowered.contains("unknown model")
@@ -331,6 +344,25 @@ mod tests {
     }
 
     /// Ordinary output must not be diagnosed as a failure.
+    /// The plugin reports a reused output directory as a sqlite traceback, which
+    /// reads as a defect in the tool. Emptying the directory does not help,
+    /// because the record outlives the files — so the explanation has to say so.
+    #[test]
+    fn explains_an_output_directory_that_has_already_been_scanned() {
+        let cause = recognise(
+            "Traceback (most recent call last):\n  sqlite3.IntegrityError: \
+             UNIQUE constraint failed: scans.scan_dir",
+        );
+
+        assert_eq!(cause, Some(Cause::OutputDirectoryAlreadyScanned));
+        let explanation = Cause::OutputDirectoryAlreadyScanned.explanation();
+        assert!(
+            explanation.contains("Emptying it is not enough"),
+            "{explanation}"
+        );
+        assert!(explanation.contains("--output-dir"), "{explanation}");
+    }
+
     #[test]
     fn says_nothing_about_text_that_reveals_nothing() {
         for text in [
