@@ -55,6 +55,8 @@ pub enum Command {
     InstallHook(InstallHookArgs),
     /// Score scans against a corpus of known flaws.
     Bench(BenchArgs),
+    /// Compare several scans of the same target.
+    Consensus(ConsensusArgs),
 }
 
 /// A known incompatibility to work around when talking to an endpoint.
@@ -86,6 +88,20 @@ pub struct BenchArgs {
     pub corpus_root: PathBuf,
     #[command(flatten)]
     pub output: OutputOptions,
+}
+
+/// Comparing several scans of one target.
+#[derive(Debug, Args)]
+pub struct ConsensusArgs {
+    /// Scan directories to compare; at least two.
+    #[arg(value_name = "SCAN_DIR", num_args = 2..)]
+    pub directories: Vec<PathBuf>,
+    /// Show only findings at least this many runs reported.
+    ///
+    /// Off by default. A finding seen once may be the one that was looked at
+    /// most carefully, so hiding it is a choice to make deliberately.
+    #[arg(long, value_name = "N")]
+    pub min_agreement: Option<usize>,
 }
 
 /// Request shape an OpenAI-compatible endpoint speaks.

@@ -274,6 +274,9 @@ fn main() -> std::process::ExitCode {
     let outcome = match command {
         Command::Info(options) => commands::info::run(options),
         Command::Logout => commands::logout::run(&std::env::vars().collect()),
+        Command::Consensus(options) => {
+            commands::consensus::run(&options.directories, options.min_agreement)
+        }
         Command::Bench(options) => commands::bench::run(
             &options.ground_truth,
             &options.results,

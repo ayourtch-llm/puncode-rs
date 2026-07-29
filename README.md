@@ -184,6 +184,41 @@ single vague report nor ten copies of the same one can inflate the score.
 Ground truth lives outside the fixtures, always: with the answers inside, an
 early run scored 2/2 and 3/3 and measured nothing at all.
 
+## Comparing runs
+
+Scan the same code twice and you will not get the same answer. Findings appear
+and vanish, severities move, and one flaw arrives under three different titles.
+A reviewer reading a single report cannot tell which findings would survive a
+second look.
+
+```sh
+puncode-security consensus run-a/ run-b/ run-c/
+```
+
+```
+Comparing 3 runs of the same target
+
+  3 of 3   OS command injection via /ping   critical
+  3 of 3   SQL injection via /user          severity disputed: critical, high
+  1 of 3   Unbounded response buffer
+
+  3 distinct, 2 in every run, 1 in only one
+  1 disagreed on severity
+```
+
+Findings are grouped by **where they point, never by how they are worded** — two
+runs describing one flaw differently have found one flaw. Runs that disagree
+about severity say so rather than one silently winning.
+
+Nothing is discarded by default. `--min-agreement N` hides the rest, and says
+how many it hid: a finding seen once may be the one that was looked at most
+carefully, so dropping it is a choice to make deliberately rather than a default.
+
+**Agreement measures stability, not correctness.** Runs sharing a blind spot
+agree exactly as readily as runs being right, and repeated runs of one model
+agree more easily than different models would. The output says so too, because
+that is where the decision gets made.
+
 ## Naming
 
 The crates, the binary and this project are named `puncode-security`. Names

@@ -39,8 +39,19 @@ if [[ ! -x "$BIN" ]]; then
     exit 2
 fi
 
-# Fixture name and the number of flaws planted in it, per docs/fixtures.md.
-FIXTURES=("flask-injection:2" "c-memory:3")
+# Read from the corpus rather than repeated here: a second list drifts, and a
+# stale expectation is a test that passes while measuring the wrong thing.
+GROUND_TRUTH="${GROUND_TRUTH:-$ROOT/benchmark/ground-truth.json}"
+mapfile -t FIXTURES < <(python3 -c "
+import json, sys
+corpus = json.load(open(sys.argv[1]))
+for f in corpus['fixtures']:
+    print(f\"{f['name']}:{len(f['flaws'])}\")
+" "$GROUND_TRUTH")
+if [[ ${#FIXTURES[@]} -eq 0 ]]; then
+    echo "no fixtures in $GROUND_TRUTH" >&2
+    exit 2
+fi
 
 mkdir -p "$OUT"
 failures=0
@@ -62,7 +73,11 @@ for entry in "${FIXTURES[@]}"; do
     [[ -n "$MODEL" ]] && args+=(--model "$MODEL")
     args+=("${EXTRA[@]}")
 
-    printf '=== %s (expecting %s findings) ===\n' "$name" "$expected"
+    if [[ "$expected" -eq 0 ]]; then
+        printf '=== %s (control - nothing planted) ===\n' "$name"
+    else
+        printf '=== %s (expecting %s findings) ===\n' "$name" "$expected"
+    fi
     set +e
     "$BIN" "${args[@]}" > "$OUT/$name.log" 2>&1
     code=$?
@@ -83,14 +98,23 @@ PY
         echo "  no findings.json — see $OUT/$name.log"
         failures=$((failures + 1))
     else
-        printf '  found %s of %s expected (exit %s)\n' "$found" "$expected" "$code"
-        [[ "$found" -lt "$expected" ]] && failures=$((failures + 1))
+        if [[ "$expected" -eq 0 ]]; then
+            # On a control fixture anything reported is a false positive, which
+            # decides trust more than recall does.
+            printf '  %s false positive(s) (exit %s)\n' "$found" "$code"
+            [[ "$found" -gt 0 ]] && failures=$((failures + 1))
+        else
+            printf '  found %s of %s expected (exit %s)\n' "$found" "$expected" "$code"
+            [[ "$found" -lt "$expected" ]] && failures=$((failures + 1))
+        fi
     fi
     printf '  results: %s\n\n' "$dir"
 done
 
+printf 'score this run:\n  puncode-security bench %s\n\n' "$OUT"
+
 if [[ "$failures" -gt 0 ]]; then
-    echo "$failures fixture(s) came up short — the scan missed known flaws."
+    echo "$failures fixture(s) fell short - missed flaws, or noise on a control."
     exit 1
 fi
-echo "every fixture reported at least its planted findings."
+echo "every fixture reported its planted findings, and the controls stayed quiet."

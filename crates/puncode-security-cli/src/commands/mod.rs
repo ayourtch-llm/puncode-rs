@@ -6,6 +6,7 @@
 
 pub mod bench;
 pub mod bulk_scan;
+pub mod consensus;
 pub mod export;
 pub mod github;
 pub mod history;

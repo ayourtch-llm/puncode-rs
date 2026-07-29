@@ -10,6 +10,7 @@ pub mod benchmark;
 pub mod bulk_scan_discovery;
 pub mod codex;
 pub mod config;
+pub mod consensus;
 pub mod contract;
 pub mod cost;
 pub mod diagnosis;
