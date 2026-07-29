@@ -482,3 +482,96 @@ mod ground_truth_tests {
         assert_eq!(parsed.fixtures[0].flaws[0], flaw);
     }
 }
+
+#[cfg(test)]
+mod syntax_tests {
+    use super::*;
+
+    fn control_fixture() -> String {
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/inventory-service/src/inventory.py"),
+        )
+        .expect("the control fixture")
+    }
+
+    /// A mutant that does not parse measures nothing.
+    ///
+    /// The scan would report a syntax error, which reads as neither "found the
+    /// flaw" nor "missed it", and the run would be wasted. `drop-validator`
+    /// deletes lines, so an operator of that shape can leave a dangling `if`
+    /// or an empty block in code shaped differently from this fixture.
+    ///
+    /// Skipped loudly where there is no Python, rather than passing quietly.
+    #[test]
+    fn every_mutant_is_still_valid_python() {
+        let Ok(python) = which_python() else {
+            eprintln!(
+                "SKIPPED every_mutant_is_still_valid_python: no python3 on PATH. Nothing is \
+                 checking that a mutant still parses, and a mutant that does not parse measures \
+                 nothing."
+            );
+            return;
+        };
+
+        let directory = tempfile::tempdir().expect("a directory");
+        let mutants = mutate("inventory.py", &control_fixture());
+        assert!(!mutants.is_empty(), "no mutants to check");
+
+        for mutant in mutants {
+            let path = directory.path().join(format!("{}.py", mutant.operator));
+            std::fs::write(&path, &mutant.source).expect("writes");
+            let output = std::process::Command::new(&python)
+                .arg("-c")
+                .arg("import ast,sys; ast.parse(open(sys.argv[1]).read())")
+                .arg(&path)
+                .output()
+                .expect("python runs");
+            assert!(
+                output.status.success(),
+                "{} produced code that does not parse:\n{}",
+                mutant.operator,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    /// And the original parses too, or the test above proves nothing.
+    #[test]
+    fn the_unmutated_fixture_is_valid_python() {
+        let Ok(python) = which_python() else {
+            eprintln!("SKIPPED the_unmutated_fixture_is_valid_python: no python3 on PATH.");
+            return;
+        };
+
+        let directory = tempfile::tempdir().expect("a directory");
+        let path = directory.path().join("original.py");
+        std::fs::write(&path, control_fixture()).expect("writes");
+
+        let output = std::process::Command::new(&python)
+            .arg("-c")
+            .arg("import ast,sys; ast.parse(open(sys.argv[1]).read())")
+            .arg(&path)
+            .output()
+            .expect("python runs");
+
+        assert!(
+            output.status.success(),
+            "the fixture itself does not parse: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn which_python() -> Result<String, ()> {
+        for candidate in ["python3", "python"] {
+            if std::process::Command::new(candidate)
+                .arg("--version")
+                .output()
+                .is_ok_and(|output| output.status.success())
+            {
+                return Ok(candidate.to_owned());
+            }
+        }
+        Err(())
+    }
+}
