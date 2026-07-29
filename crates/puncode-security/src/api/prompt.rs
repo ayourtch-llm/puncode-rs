@@ -125,8 +125,19 @@ fn target_contract_instructions() -> [String; 2] {
 /// manifest reasonably believes it is done: the manifest even says `completed`.
 /// But `report.md` is a required artifact, so the scan is then rejected for
 /// missing it, having done all the work correctly.
-fn finalization_instructions() -> [String; 2] {
+fn finalization_instructions() -> [String; 3] {
     [
+        // Half the scans in one corpus run were refused at publication because
+        // the agent wrote scan-manifest.json itself with status "completed" and
+        // a sealedAt it invented — one of them a round 17:45:00Z while the scan
+        // was running at 17:29. finalize_scan_contract.py returns early when it
+        // finds a sealed manifest, so the hand-written bytes survive to the
+        // publication check and fail it, after every finding has been made.
+        "Do not set scan.status to \"completed\" or fill in scan.sealedAt yourself, and do not \
+         invent a timestamp for either. The finalization command below seals the manifest and \
+         writes those fields; a manifest that already looks sealed makes it return without \
+         rewriting the file, and the scan is then refused when it is published."
+            .to_owned(),
         "Writing scan-manifest.json, findings.json and coverage.json does not finish the scan. \
          The scan is unfinished until report.md exists in \"$CODEX_SECURITY_SCAN_DIR\", and \
          report.md is produced only by the finalization command below — never write it by hand."

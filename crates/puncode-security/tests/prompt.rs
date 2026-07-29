@@ -48,6 +48,7 @@ fn is_scope_extension(line: &str) -> bool {
     (line.starts_with("Use exactly [") && line.contains("scan.scope."))
         || line.starts_with("Before writing scan-manifest.json, read the workbench")
         || line.starts_with("From the same contract,")
+        || line.starts_with("Do not set scan.status to")
         || line.starts_with("Writing scan-manifest.json, findings.json and coverage.json")
         || line.starts_with("There is no complete_codex_security_scan tool")
 }
@@ -439,4 +440,52 @@ fn rules_out_the_finalization_route_this_host_cannot_take() {
         prompt.contains("no complete_codex_security_scan tool on this host"),
         "{prompt}"
     );
+}
+
+/// The instruction that exists because half the scans in one corpus run were
+/// refused at publication.
+///
+/// The agent had written `scan-manifest.json` itself with `status: completed`
+/// and an invented `sealedAt` — one of them a round `17:45:00Z` while the scan
+/// was actually running at 17:29. `finalize_scan_contract.py` returns early
+/// when it finds a sealed manifest, so those bytes survived to the publication
+/// check and failed it, after every finding had been made.
+#[test]
+fn tells_the_agent_not_to_seal_the_manifest_itself() {
+    let (_temp, root) = plugin_root();
+
+    let prompt = scan_prompt(
+        &root,
+        &target_named("repository"),
+        ScanMode::Standard,
+        false,
+        false,
+    )
+    .expect("a prompt");
+
+    assert!(prompt.contains("Do not set scan.status"), "{prompt}");
+    assert!(prompt.contains("scan.sealedAt"), "{prompt}");
+    // The reason, not just the rule: an agent told only "do not" will find a
+    // way to do it that feels like an exception.
+    assert!(
+        prompt.contains("makes it return without rewriting"),
+        "{prompt}"
+    );
+}
+
+/// And it must be said whatever the scan is pointed at, because the failure
+/// does not depend on the target.
+#[test]
+fn says_it_for_every_kind_of_target() {
+    let (_temp, root) = plugin_root();
+
+    for kind in ["repository", "paths", "refs", "working-tree"] {
+        let prompt = scan_prompt(&root, &target_named(kind), ScanMode::Standard, false, false)
+            .expect("a prompt");
+
+        assert!(
+            prompt.contains("Do not set scan.status"),
+            "{kind}: {prompt}"
+        );
+    }
 }
