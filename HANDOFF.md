@@ -109,6 +109,25 @@ digest logic, which would drift.
 - **Output may not live inside the scanned repository.** Fixtures live in this
   checkout, so the checkout is the protected root and results must go elsewhere.
 
+## Two workbench databases exist, and only one is live
+
+`~/.codex/state/plugins/codex-security/workbench.sqlite3` holds the 79 scans
+run here. `~/.codex-security/workbench.sqlite3` holds none and is dated hours
+earlier — left behind when `CODEX_SECURITY_STATE_DIR` or `CODEX_HOME` pointed
+somewhere else. It is inert, and it looks every bit as authoritative as the
+live one.
+
+Resolution is deterministic: `CODEX_SECURITY_STATE_DIR`, else
+`CODEX_HOME/state/plugins/codex-security`, else `~/.codex/...`. `doctor` reports
+the resolved path now, because working that out by hand took a while and "where
+did my scans go" should cost one line.
+
+`scans list` is scoped **by repository path**, so an empty result usually means
+the path is not the one that was scanned rather than that anything is wrong. The
+fixture rename is a live example: `nohints-1` scans are still recorded under
+`flask-injection.src` and `c-memory.src`, so asking about `kv-store.src` returns
+nothing and should.
+
 ## export was checked only for what it refuses
 
 Every test in `cli/tests/export.rs` asserted a **refusal** — an overwritten

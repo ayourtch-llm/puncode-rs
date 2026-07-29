@@ -22,7 +22,8 @@ use std::time::Duration;
 use puncode_security::diagnosis::{Cause, recognise};
 use puncode_security::provenance::Endpoint;
 use puncode_security::runtime::{
-    PluginPythonOptions, bundled_plugin_root, resolve_codex_command, resolve_plugin_python,
+    PluginPythonOptions, bundled_plugin_root, puncode_security_state_directory,
+    resolve_codex_command, resolve_plugin_python,
 };
 use puncode_security::targets::ProcessEnvironment;
 
@@ -90,6 +91,10 @@ pub fn examine(examination: &Examination) -> Vec<Check> {
             name: "sandbox",
             health: check_sandbox(),
         },
+        Check {
+            name: "saved scans",
+            health: check_saved_scans(&examination.environment),
+        },
     ];
 
     match &examination.base_url {
@@ -142,6 +147,31 @@ fn check_codex(examination: &Examination) -> Health {
             remedy: "Check the Codex CLI installation.".to_owned(),
         },
     }
+}
+
+/// Where finished scans are recorded, and how many are there.
+///
+/// Never a failure — a first scan on a new machine has nowhere to have been
+/// recorded yet, and saying so is not a problem.
+///
+/// It is here because answering it by hand took a while. The location depends
+/// on `CODEX_SECURITY_STATE_DIR`, then `CODEX_HOME`, then a default, and a
+/// database left behind by an earlier setting sits on disk looking every bit as
+/// authoritative as the live one. "Where did my scans go" should cost one line,
+/// not an afternoon with sqlite.
+fn check_saved_scans(environment: &ProcessEnvironment) -> Health {
+    let database = puncode_security_state_directory(environment).join("workbench.sqlite3");
+    if !database.is_file() {
+        return Health::Note(format!("nothing recorded yet at {}", database.display()));
+    }
+    // Size rather than a row count: reading the schema would mean opening
+    // somebody else's database with a driver this tool does not otherwise
+    // need, and the question here is which file is in use, not what is in it.
+    let bytes = std::fs::metadata(&database).map(|m| m.len()).unwrap_or(0);
+    Health::Ok(format!(
+        "recorded in {} ({bytes} bytes)",
+        database.display()
+    ))
 }
 
 fn check_plugin() -> Health {
@@ -673,5 +703,73 @@ mod model_listing_tests {
             check_model_listed(&Endpoint::new("http://127.0.0.1:1/v1"), Some("some-model"));
 
         assert!(matches!(health, Health::Skipped(_)), "{health:?}");
+    }
+}
+
+#[cfg(test)]
+mod saved_scans_tests {
+    use super::*;
+
+    /// The question this answers: which of the databases on disk is the live
+    /// one. `CODEX_SECURITY_STATE_DIR` wins, and it must be the path reported.
+    #[test]
+    fn names_the_configured_state_directory() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let database = directory.path().join("workbench.sqlite3");
+        std::fs::write(&database, b"not really a database").expect("writes");
+        let environment = ProcessEnvironment::from([(
+            "CODEX_SECURITY_STATE_DIR".to_owned(),
+            directory.path().to_string_lossy().into_owned(),
+        )]);
+
+        let health = check_saved_scans(&environment);
+
+        let Health::Ok(detail) = health else {
+            panic!("expected the database to be found: {health:?}");
+        };
+        assert!(
+            detail.contains(&database.to_string_lossy().to_string()),
+            "{detail}"
+        );
+    }
+
+    /// A machine that has never run a scan is not broken.
+    #[test]
+    fn an_absent_database_is_a_note_and_not_a_failure() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let environment = ProcessEnvironment::from([(
+            "CODEX_SECURITY_STATE_DIR".to_owned(),
+            directory.path().to_string_lossy().into_owned(),
+        )]);
+
+        let health = check_saved_scans(&environment);
+
+        assert!(matches!(health, Health::Note(_)), "{health:?}");
+        assert!(!health.blocks_a_scan());
+    }
+
+    /// Two settings, two databases: the reported path must follow the setting,
+    /// or the check answers the wrong question.
+    #[test]
+    fn follows_the_setting_rather_than_whichever_file_exists() {
+        let live = tempfile::tempdir().expect("a directory");
+        let stale = tempfile::tempdir().expect("a directory");
+        for directory in [&live, &stale] {
+            std::fs::write(directory.path().join("workbench.sqlite3"), b"x").expect("writes");
+        }
+
+        let reported = |directory: &tempfile::TempDir| {
+            let environment = ProcessEnvironment::from([(
+                "CODEX_SECURITY_STATE_DIR".to_owned(),
+                directory.path().to_string_lossy().into_owned(),
+            )]);
+            match check_saved_scans(&environment) {
+                Health::Ok(detail) => detail,
+                other => panic!("{other:?}"),
+            }
+        };
+
+        assert!(reported(&live).contains(&live.path().to_string_lossy().to_string()));
+        assert!(reported(&stale).contains(&stale.path().to_string_lossy().to_string()));
     }
 }
