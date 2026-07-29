@@ -45,7 +45,9 @@ fn fixture() -> Fixture {
 /// A plugin directory with every scan skill installed.
 /// Whether a line is the port's deliberate addition to upstream's prompt.
 fn is_scope_extension(line: &str) -> bool {
-    line.starts_with("Use exactly [") && line.contains("scan.scope.")
+    (line.starts_with("Use exactly [") && line.contains("scan.scope."))
+        || line.starts_with("Before writing scan-manifest.json, read the workbench")
+        || line.starts_with("From the same contract,")
 }
 
 fn plugin_root() -> (TempDir, PathBuf) {
@@ -342,4 +344,58 @@ fn says_nothing_about_scope_for_a_diff_scan() {
             "{kind:?}: {prompt}"
         );
     }
+}
+
+/// Which target kinds the workbench accepts depends on a snapshot it took at
+/// registration, compared against the working tree now. That cannot be worked
+/// out here without reimplementing the plugin's digest logic, so the agent is
+/// told to ask the workbench instead of guessing — it guessed `git_worktree`,
+/// `directory_snapshot` and `git_revision` across runs of one unchanged scan.
+#[test]
+fn tells_the_agent_to_read_the_target_contract() {
+    let target = NormalizedTarget {
+        kind: Some(NormalizedTargetKind::Repository),
+        ..NormalizedTarget::default()
+    };
+    let (_temp, root) = plugin_root();
+
+    let prompt = scan_prompt(&root, &target, ScanMode::Standard, false, false).expect("a prompt");
+
+    assert!(prompt.contains("get-scan"), "{prompt}");
+    assert!(prompt.contains("contract.target.allowedKinds"), "{prompt}");
+    assert!(prompt.contains("requiredSnapshotDigest"), "{prompt}");
+}
+
+/// Each kind takes exactly one coordinate field, and sending both is what the
+/// workbench refused on the very first working scan.
+#[test]
+fn says_a_target_carries_one_coordinate_field() {
+    let target = NormalizedTarget {
+        kind: Some(NormalizedTargetKind::Repository),
+        ..NormalizedTarget::default()
+    };
+    let (_temp, root) = plugin_root();
+
+    let prompt = scan_prompt(&root, &target, ScanMode::Standard, false, false).expect("a prompt");
+
+    assert!(prompt.contains("Do not send both"), "{prompt}");
+    assert!(prompt.contains("revision for git_revision"), "{prompt}");
+}
+
+/// A diff scan gets no scope instruction but still needs the contract, because
+/// its kind is decided the same way.
+#[test]
+fn still_reads_the_contract_for_a_diff_scan() {
+    let target = NormalizedTarget {
+        kind: Some(NormalizedTargetKind::Refs),
+        base: Some("main".to_owned()),
+        head: Some("HEAD".to_owned()),
+        ..NormalizedTarget::default()
+    };
+    let (_temp, root) = plugin_root();
+
+    let prompt = scan_prompt(&root, &target, ScanMode::Standard, false, false).expect("a prompt");
+
+    assert!(!prompt.contains("scan.scope.includePaths"), "{prompt}");
+    assert!(prompt.contains("contract.target.allowedKinds"), "{prompt}");
 }

@@ -94,6 +94,29 @@ fn scope_instructions(target: &NormalizedTarget) -> Vec<String> {
     ]
 }
 
+/// Tells the agent to read the target contract rather than infer it.
+///
+/// The workbench decides which target kinds it will accept from the snapshot it
+/// took at registration, compared against the working tree as it is now. That
+/// answer cannot be computed here without reimplementing the plugin's digest
+/// logic, which would be one more thing to drift; but the workbench will hand
+/// it over for the asking, and it is the same authority that judges the answer.
+fn target_contract_instructions() -> [String; 2] {
+    [
+        "Before writing scan-manifest.json, read the workbench's contract for this scan: \
+         \"$PYTHON\" \"$CODEX_SECURITY_PLUGIN_ROOT/scripts/workbench_db.py\" get-scan \
+         --scan-id \"$CODEX_SECURITY_SCAN_ID\". Its contract.target.allowedKinds lists the only \
+         values accepted for scan.target.kind; choose the one describing what you reviewed, and \
+         when only one is listed use that."
+            .to_owned(),
+        "From the same contract, when contract.target.requiredSnapshotDigest is present use it \
+         verbatim as scan.target.snapshotDigest, and give scan.target the one coordinate field \
+         its kind requires: revision for git_revision, snapshotDigest for git_worktree, \
+         git_diff and directory_snapshot. Do not send both."
+            .to_owned(),
+    ]
+}
+
 /// Builds the scan instruction, confirming the skill it names is installed.
 pub fn scan_prompt(
     plugin_root: &Path,
@@ -157,6 +180,7 @@ pub fn scan_prompt(
     // field that must be empty. These are the values the workbench will demand,
     // stated the same way the target ID already is.
     lines.extend(scope_instructions(target));
+    lines.extend(target_contract_instructions());
 
     if has_config_path {
         lines.push(
