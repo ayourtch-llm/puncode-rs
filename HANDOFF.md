@@ -50,6 +50,7 @@ what was learned, what nearly went wrong, and what is still open. Read
 
 **Staying faithful to upstream**
 
+- [The plugin names a binary this build does not have](#the-plugin-names-a-binary-this-build-does-not-have)
 - [The naming split — read before any rename](#the-naming-split--read-before-any-rename)
 - [Extending the prompt](#extending-the-prompt)
 - [Nothing was checking the oracle itself](#nothing-was-checking-the-oracle-itself)
@@ -1013,6 +1014,24 @@ model varies between runs — so the right control is still worth one scan. It
 just is not the loose comparison I described.
 
 # Staying faithful to upstream
+
+## The plugin names a binary this build does not have
+
+`scans compare` without a prior match prints, from the plugin:
+
+```
+No saved matches for these scans. Run 'codex-security scans match BEFORE AFTER' first.
+```
+
+There is no `codex-security` binary here, so following that gets "command not
+found". **The message is not ours to edit** — it is in
+`workbench_scan_history.py`, which is upstream's code, verified by digest.
+
+So the CLI explains rather than rewrites: the original is still printed, and a
+second line says what the command is in this build. Any other plugin message
+naming a command gets the same treatment, and identifiers that merely start the
+same way — `codex-security-plugin`, `$codex-security:validation` — are left
+alone, because they are protocol and not commands.
 
 ## The naming split — read before any rename
 

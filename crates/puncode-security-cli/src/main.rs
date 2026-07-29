@@ -87,6 +87,32 @@ fn skill(
     }
 }
 
+/// Translates a plugin message that names a command this build does not have.
+///
+/// The plugin is somebody else's software, verified by digest, and its text is
+/// not ours to edit — see the naming split in HANDOFF.md. But it tells the
+/// reader to run `codex-security …`, and there is no such binary here, so
+/// following the instruction gets "command not found".
+///
+/// Explaining beats rewriting: the original message is still printed, and this
+/// says what it means in this build.
+fn renamed_command_note(problem: &str) -> Vec<String> {
+    const UPSTREAM: &str = "codex-security ";
+    let Some(start) = problem.find(UPSTREAM) else {
+        return Vec::new();
+    };
+    let rest = &problem[start + UPSTREAM.len()..];
+    let command: String = rest
+        .chars()
+        .take_while(|c| *c != '\'' && *c != '"' && *c != '.')
+        .collect();
+    vec![format!(
+        "That message comes from the plugin, which names the upstream binary. Here it is: \
+         puncode-security {}",
+        command.trim()
+    )]
+}
+
 /// Exports a finished scan.
 ///
 /// The export goes to standard output when that is what was asked for, and the
@@ -711,6 +737,11 @@ fn main() -> std::process::ExitCode {
         }
         Err(problem) => {
             eprintln!("puncode-security: {problem}");
+            // These are the commands that surface the plugin's own text, and
+            // the plugin names the upstream binary.
+            for line in renamed_command_note(&problem) {
+                eprintln!("puncode-security: {line}");
+            }
             std::process::ExitCode::from(exit::ERROR)
         }
     }
@@ -775,5 +806,45 @@ mod repeat_tests {
         std::fs::write(directory.path().join("a.py"), "x = 1\n").expect("writes");
 
         assert_eq!(pollution_between_runs(directory.path(), 1, 5), None);
+    }
+}
+
+#[cfg(test)]
+mod renamed_command_tests {
+    use super::renamed_command_note;
+
+    /// The real message, from `scans compare` with no saved match.
+    #[test]
+    fn translates_the_command_the_plugin_names() {
+        let note = renamed_command_note(
+            "Could not read Puncode Security scan history: No saved matches for these scans. \
+             Run 'codex-security scans match BEFORE AFTER' first.",
+        );
+
+        assert_eq!(note.len(), 1, "{note:?}");
+        assert!(
+            note[0].ends_with("puncode-security scans match BEFORE AFTER"),
+            "{note:?}"
+        );
+        // The plugin is named as the source, so nobody reads it as our typo.
+        assert!(note[0].contains("comes from the plugin"), "{note:?}");
+    }
+
+    /// Nothing is added to a message that names no command.
+    #[test]
+    fn says_nothing_about_an_ordinary_failure() {
+        assert!(renamed_command_note("Could not read scan history: no such scan.").is_empty());
+    }
+
+    /// The plugin and marketplace names are not commands and must not be
+    /// rewritten into one — they are protocol identifiers.
+    #[test]
+    fn does_not_translate_an_identifier_that_merely_starts_the_same_way() {
+        for message in [
+            "scan.producer.name must be codex-security-plugin.",
+            "The $codex-security:validation skill is missing.",
+        ] {
+            assert!(renamed_command_note(message).is_empty(), "{message}");
+        }
     }
 }
