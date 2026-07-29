@@ -305,6 +305,38 @@ work is done.
    `includePaths`/`excludePaths` have no schema description. That is why a
    weaker model never finds the rule. Worth reporting upstream.
 
+## The ETXTBSY flake, and the rule for new suites
+
+Tests that write an executable stub and spawn it race on Linux. The suite runs
+in parallel threads; a thread that forks between another thread's open and close
+inherits the write descriptor, and the exec of that file fails with **`Text file
+busy`** until the child reaches its own exec. It is rare — one occurrence across
+roughly thirty full-workspace runs — and it is not a real defect in the code
+under test.
+
+Three sites carry the remedy now: `auth.rs`, `api/client.rs`, and
+`tests/scan.rs`. **If you add a suite that writes a stub and spawns it, add the
+retry.** These files write `0o755` stubs and do not have it yet, so they are the
+ones to watch:
+
+`runtime/marketplace.rs`, `runtime/python.rs`, `runtime/isolated.rs`,
+`runtime/output.rs`, `runtime/workbench.rs`, `tests/trusted_executable.rs`,
+`tests/codex.rs`, `tests/multiscan.rs`, `tests/scan_comparison.rs`,
+`cli/tests/scan_run.rs`.
+
+They were left alone deliberately: none has been observed to flake, and patching
+ten files against a race that may never fire in them is ten unevaluated changes.
+
+**Do not verify this fix by rerunning until it passes.** At a one-in-thirty base
+rate that proves nothing, and twelve clean runs after the fix proved nothing
+either. `retries_a_stub_that_is_still_being_written` creates the condition
+deliberately by holding a write descriptor open, asserts the operating system
+really does refuse the exec before relying on it, and then releases it from
+another thread. Removing the retry makes that test fail — checked, not assumed.
+
+A flaky suite is worse than a smaller one: it teaches whoever runs it to rerun
+rather than read, and then a real failure gets rerun too.
+
 ## Process notes that cost real time
 
 - **One run proves nothing here.** Model output varied on every attempt. Two

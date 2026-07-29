@@ -32,6 +32,15 @@ fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
+/// Whether a failure is the freshly written stub not being executable yet.
+///
+/// Matched narrowly and against the message the operating system actually
+/// produces. A broader match would swallow the real "could not start codex"
+/// failures these tests exist to check.
+fn is_still_busy(error: &puncode_security::error::Error) -> bool {
+    error.to_string().contains("Text file busy")
+}
+
 fn write_executable(path: &Path, script: &str) {
     fs::write(path, script).expect("write script");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod script");
@@ -228,6 +237,41 @@ struct Harness {
 }
 
 impl Harness {
+    /// Runs a scan, retrying only while the stub is still busy.
+    ///
+    /// Writing an executable and exec'ing it from the same process races on
+    /// Linux. These tests run in parallel threads, each writing its own stub
+    /// and spawning it; a thread that forks between another thread's open and
+    /// close inherits the write descriptor, and the exec of that file fails
+    /// with `Text file busy` until the child reaches its own exec. The window
+    /// is small and the suite hits it perhaps once in several hundred runs.
+    ///
+    /// Retrying is safe here and only here: the failure happens *before* the
+    /// process starts, so nothing has been observed or recorded yet and the
+    /// observer sees one scan's worth of events. Anything that fails after the
+    /// spawn is returned untouched. `auth.rs` and `api/client.rs` carry the
+    /// same remedy for the same reason.
+    ///
+    /// A flaky suite is worse than a smaller one: it teaches whoever runs it to
+    /// rerun rather than read, and then a real failure gets rerun too.
+    fn run(
+        &self,
+        repository: &str,
+        options: &ScanOptions,
+        observer: &mut dyn ScanObserver,
+        cancellation: &ScanCancellation,
+    ) -> puncode_security::error::Result<puncode_security::ScanResult> {
+        for _ in 0..100 {
+            match self.client.run(repository, options, observer, cancellation) {
+                Err(error) if is_still_busy(&error) => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                outcome => return outcome,
+            }
+        }
+        self.client.run(repository, options, observer, cancellation)
+    }
+
     fn new(events: &str) -> Self {
         Self::with_artifacts(events, true)
     }
@@ -349,7 +393,6 @@ fn runs_a_scan_and_returns_its_validated_results() {
     let mut observer = Recorder::default();
 
     let result = harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options(),
@@ -374,7 +417,6 @@ fn records_the_scan_with_the_workbench() {
     let harness = Harness::new(SCAN_EVENTS);
 
     harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options(),
@@ -408,7 +450,6 @@ fn tells_the_agent_where_the_scan_lives() {
     let harness = Harness::new(SCAN_EVENTS);
 
     harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options(),
@@ -429,7 +470,6 @@ fn refuses_a_scan_that_produced_no_artifacts() {
     let harness = Harness::with_artifacts(SCAN_EVENTS, false);
 
     let error = harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options(),
@@ -452,7 +492,6 @@ fn records_a_failed_scan_with_the_workbench() {
     let harness = Harness::with_artifacts(SCAN_EVENTS, false);
 
     harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options(),
@@ -479,7 +518,6 @@ fn refuses_a_stream_that_ends_before_the_turn_completes() {
     let harness = Harness::new(events);
 
     let error = harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options(),
@@ -502,7 +540,6 @@ fn stops_on_an_error_the_agent_is_not_retrying() {
     let harness = Harness::new(events);
 
     let error = harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options(),
@@ -523,7 +560,6 @@ fn refuses_a_rerun_against_a_different_plugin_version() {
     let harness = Harness::new(SCAN_EVENTS);
 
     let error = harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options().with_expected_plugin_version("0.1.0"),
@@ -547,7 +583,6 @@ fn removes_the_knowledge_base_once_the_scan_ends() {
     fs::write(documents.join("scope.md"), "Ignore debug endpoints.").expect("write");
 
     harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness
@@ -625,7 +660,6 @@ fn reports_what_the_scan_is_spending() {
     let mut observer = Recorder::default();
 
     harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options(),
@@ -656,7 +690,6 @@ fn stops_a_scan_that_passes_its_cost_limit() {
     }));
 
     let error = harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options().with_max_cost_usd(0.01),
@@ -685,7 +718,6 @@ fn completes_a_scan_that_stays_within_its_cost_limit() {
     }));
 
     harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options().with_max_cost_usd(1_000.0),
@@ -710,7 +742,6 @@ fn refuses_a_budgeted_scan_whose_spend_is_unknown() {
     let harness = Harness::new(events);
 
     let error = harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options().with_max_cost_usd(10.0),
@@ -731,7 +762,6 @@ fn evaluates_a_budget_from_the_turns_reported_usage() {
     let harness = Harness::new(SCAN_EVENTS);
 
     let result = harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options().with_max_cost_usd(1_000.0),
@@ -762,7 +792,6 @@ fn stops_a_scan_cancelled_while_it_runs() {
     }
 
     let error = harness
-        .client
         .run(
             &harness.repository.display().to_string(),
             &harness.options(),
@@ -773,4 +802,68 @@ fn stops_a_scan_cancelled_while_it_runs() {
 
     assert!(error.is_scan_interrupted(), "unexpected: {error}");
     assert_eq!(error.scan_dir(), Some(harness.output.as_path()));
+}
+
+/// The retry, exercised against a real `ETXTBSY` rather than a hoped-for one.
+///
+/// The flake that prompted this appears perhaps once in several hundred runs,
+/// so rerunning the suite until it passes proves nothing about the fix. This
+/// creates the condition deliberately: holding a write descriptor open on an
+/// executable is exactly what makes Linux refuse to exec it, which is what a
+/// concurrently forking thread does by accident.
+#[test]
+fn retries_a_stub_that_is_still_being_written() {
+    let harness = Harness::new(SCAN_EVENTS);
+
+    // Hold the stub open for writing. Nothing is written through it — the
+    // descriptor alone is what the kernel objects to.
+    let busy = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&harness.codex)
+        .expect("holds the stub open");
+
+    // Proof the condition is real before relying on it: a direct spawn must
+    // fail this way, or the test below would pass without testing anything.
+    let refused = std::process::Command::new(&harness.codex)
+        .arg("--version")
+        .output()
+        .expect_err("the operating system refuses to exec a file open for writing");
+    assert_eq!(
+        refused.kind(),
+        std::io::ErrorKind::ExecutableFileBusy,
+        "{refused}"
+    );
+
+    let released = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        drop(busy);
+    });
+
+    let result = harness.run(
+        &harness.repository.display().to_string(),
+        &harness.options(),
+        &mut Recorder::default(),
+        &ScanCancellation::new(),
+    );
+
+    released.join().expect("the descriptor is released");
+    result.expect("the scan completes once the stub is no longer busy");
+}
+
+/// And it must not swallow the failure these tests exist to catch.
+#[test]
+fn does_not_retry_past_a_stub_that_is_simply_missing() {
+    let harness = Harness::new(SCAN_EVENTS);
+    std::fs::remove_file(&harness.codex).expect("removes the stub");
+
+    let error = harness
+        .run(
+            &harness.repository.display().to_string(),
+            &harness.options(),
+            &mut Recorder::default(),
+            &ScanCancellation::new(),
+        )
+        .expect_err("a missing codex is still a failure");
+
+    assert!(!is_still_busy(&error), "{error}");
 }
