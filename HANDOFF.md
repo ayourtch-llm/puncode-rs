@@ -1300,6 +1300,14 @@ exit code when you do that: the first attempt piped it through `head` and read
   never fired; codex actually says `error sending request for url`.
 - **Dead-code warnings found three real gaps** — a rerun ignoring saved config,
   a dropped account fallback, and a redundant accessor. Do not silence them.
+- **A scripted replacement on an ambiguous anchor patches the wrong one.**
+  `main.rs` has ten error arms printing `puncode-security: {problem}`; a
+  first-match replacement landed in one of the others, and the unit tests passed
+  against a function nothing reachable called. The live command printed no note,
+  which is the only reason it was caught. Either use an editor that refuses a
+  non-unique match, or assert the anchor appears exactly once before replacing.
+  **And for anything user-visible, run the command** — a unit test on a helper
+  proves the helper, not the wiring.
 - **`cargo fmt` reflows call sites**, so scripted replacements written against
   unformatted code silently miss. Re-check after formatting, and format before
   committing (one commit here needed a follow-up for exactly that).
