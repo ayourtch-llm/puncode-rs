@@ -38,6 +38,12 @@ pub enum Health {
     /// Distinct from working: reporting an unchecked thing as fine is how a
     /// green report comes to mean nothing.
     Skipped(String),
+    /// Worth knowing, and not a reason to stop.
+    ///
+    /// Kept apart from `Broken` deliberately. A note that blocks a scan is a
+    /// false alarm, and the first thing anyone does with a command that raises
+    /// false alarms is stop running it.
+    Note(String),
 }
 
 impl Health {
@@ -93,12 +99,16 @@ pub fn examine(examination: &Examination) -> Vec<Check> {
                 health: check_endpoint(base_url),
             });
             checks.push(Check {
+                name: "model",
+                health: check_model_listed(base_url, examination.model.as_deref()),
+            });
+            checks.push(Check {
                 name: "system messages",
                 health: check_system_messages(base_url, examination.model.as_deref()),
             });
         }
         None => {
-            for name in ["endpoint", "system messages"] {
+            for name in ["endpoint", "model", "system messages"] {
                 checks.push(Check {
                     name,
                     health: Health::Skipped("no --base-url given".to_owned()),
@@ -266,6 +276,57 @@ fn check_endpoint(base_url: &Endpoint) -> Health {
 /// `developer` items, and a server whose template permits one system message
 /// refuses the request with a message about ordering — which is not the problem
 /// and sends the reader somewhere useless.
+/// Whether the endpoint lists the model that was asked for.
+///
+/// A note, never a failure, and the difference was measured rather than
+/// assumed: this endpoint serves whatever it loaded and ignores the `model`
+/// field entirely, so a name it does not list still works. Somewhere that
+/// routes by name it would not, and a typo would cost a whole scan to
+/// discover. Both facts fit in one line.
+fn check_model_listed(base_url: &Endpoint, model: Option<&str>) -> Health {
+    let Some(model) = model else {
+        return Health::Skipped("no --model given, so there is nothing to look for".to_owned());
+    };
+
+    let target = format!("{}/models", base_url.for_request().trim_end_matches('/'));
+    let agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(20)))
+        .http_status_as_error(false)
+        .build()
+        .new_agent();
+
+    let listed = match agent.get(&target).call() {
+        Ok(mut response) if response.status().is_success() => {
+            let body = response.body_mut().read_to_string().unwrap_or_default();
+            models_in(&body)
+        }
+        // The endpoint check above already reports an unreachable endpoint;
+        // saying it twice helps nobody.
+        _ => return Health::Skipped("the endpoint did not list its models".to_owned()),
+    };
+
+    if listed.iter().any(|listed| listed == model) {
+        return Health::Ok(format!("{model} is served"));
+    }
+    Health::Note(format!(
+        "the endpoint lists {} model(s) and none is {model}. Some servers ignore the name and serve \
+         whatever they loaded, so this may be fine — but a mistyped name looks exactly like this \
+         and costs a whole scan to find out.",
+        listed.len()
+    ))
+}
+
+/// The model identifiers in an OpenAI-compatible `/models` response.
+fn models_in(body: &str) -> Vec<String> {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|document| document.get("data")?.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|entry| entry.get("id")?.as_str().map(str::to_owned))
+        .collect()
+}
+
 fn check_system_messages(base_url: &Endpoint, model: Option<&str>) -> Health {
     let Some(model) = model else {
         return Health::Skipped("no --model given, so nothing could be asked".to_owned());
@@ -324,6 +385,9 @@ pub fn render(checks: &[Check]) -> String {
                 lines.push(format!("  BROKEN   {:<16} {detail}", check.name));
                 lines.push(format!("           {:<16} {remedy}", ""));
             }
+            Health::Note(detail) => {
+                lines.push(format!("  note     {:<16} {detail}", check.name));
+            }
         }
     }
 
@@ -358,6 +422,14 @@ pub fn render_json(checks: &[Check]) -> String {
                 "check": check.name, "status": "ok", "detail": detail }),
             Health::Skipped(why) => serde_json::json!({
                 "check": check.name, "status": "skipped", "detail": why }),
+            Health::Note(detail) => serde_json::json!({
+                "check": check.name,
+                "status": "note",
+                "detail": detail,
+                // Said in the payload too: a job reading this must not treat a
+                // note as a reason to stop.
+                "blocksAScan": false,
+            }),
             Health::Broken { detail, remedy } => serde_json::json!({
                 "check": check.name, "status": "broken",
                 "detail": detail, "remedy": remedy }),
@@ -497,6 +569,109 @@ mod tests {
             Health::Skipped(why) => {
                 assert!(why.contains("bwrap"), "an unexpected skip: {why}");
             }
+            // The sandbox either works or it does not; there is nothing here
+            // that is merely worth knowing.
+            Health::Note(detail) => panic!("the sandbox check must decide: {detail}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod model_listing_tests {
+    use super::*;
+
+    #[test]
+    fn reads_model_ids_from_an_openai_style_listing() {
+        let body = serde_json::json!({
+            "object": "list",
+            "data": [{ "id": "a-model", "object": "model" }, { "id": "b-model" }],
+        })
+        .to_string();
+
+        assert_eq!(models_in(&body), vec!["a-model", "b-model"]);
+    }
+
+    /// The real body this endpoint returns, so the parser is not written
+    /// against a shape somebody imagined.
+    #[test]
+    fn reads_the_shape_this_endpoint_actually_returns() {
+        let body = serde_json::json!({
+            "object": "list",
+            "data": [{
+                "id": "/home/ayourtch/models/deepreinforce-ai_Ornith-1.0-35B-IQ4_XS.gguf",
+                "object": "model",
+                "created": 0,
+                "owned_by": "llamacpp",
+            }],
+        })
+        .to_string();
+
+        assert_eq!(models_in(&body).len(), 1);
+        assert!(models_in(&body)[0].ends_with(".gguf"));
+    }
+
+    #[test]
+    fn a_listing_it_cannot_read_yields_nothing_rather_than_panicking() {
+        for body in [
+            "",
+            "not json",
+            "{}",
+            r#"{"data":"nope"}"#,
+            r#"{"data":[{}]}"#,
+        ] {
+            assert!(models_in(body).is_empty(), "{body}");
+        }
+    }
+
+    /// A note must never stop a scan. The one thing that would make this check
+    /// worse than useless is a false alarm on an endpoint that ignores the
+    /// model name — which is exactly what the endpoint here does.
+    #[test]
+    fn a_note_does_not_block_a_scan() {
+        let note = Health::Note("the endpoint lists 1 model(s) and none is x".to_owned());
+
+        assert!(!note.blocks_a_scan());
+        let rendered = render(&[Check {
+            name: "model",
+            health: note,
+        }]);
+        assert!(rendered.contains("note     model"), "{rendered}");
+        assert!(
+            rendered.contains("nothing checked here would stop a scan"),
+            "{rendered}"
+        );
+    }
+
+    /// And a machine reading this must not treat it as a reason to stop either.
+    #[test]
+    fn the_structured_form_says_a_note_does_not_block() {
+        let structured = render_json(&[Check {
+            name: "model",
+            health: Health::Note("something worth knowing".to_owned()),
+        }]);
+
+        assert!(structured.contains("\"status\": \"note\""), "{structured}");
+        assert!(
+            structured.contains("\"blocksAScan\": false"),
+            "{structured}"
+        );
+    }
+
+    /// Nothing is claimed when nothing was asked for.
+    #[test]
+    fn says_it_was_skipped_when_no_model_was_given() {
+        let health = check_model_listed(&Endpoint::new("http://127.0.0.1:1/v1"), None);
+
+        assert!(matches!(health, Health::Skipped(_)), "{health:?}");
+    }
+
+    /// An endpoint that cannot be reached is already reported by the endpoint
+    /// check; saying it twice helps nobody.
+    #[test]
+    fn does_not_repeat_an_unreachable_endpoint() {
+        let health =
+            check_model_listed(&Endpoint::new("http://127.0.0.1:1/v1"), Some("some-model"));
+
+        assert!(matches!(health, Health::Skipped(_)), "{health:?}");
     }
 }

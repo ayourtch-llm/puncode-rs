@@ -511,6 +511,24 @@ truth**, so the provenance is part of the record and a reader can discount it.
 The real findings document from that run is checked in as a fixture, and
 removing the class pass makes those tests fail — checked by removing it.
 
+## doctor reports the model as a note, on purpose
+
+`check_model_listed` compares `--model` against the endpoint's own `/models`
+listing. It can only ever be a **note**.
+
+The reason is measured, not assumed. This endpoint (llama.cpp, one model loaded)
+**ignores the `model` field entirely** — `--model not-a-real-model` still gets a
+completion, and still fails on the system-message template exactly as the real
+name does. So "not in the listing" cannot mean "will not work". Somewhere that
+routes by name it would, and a typo there costs a whole scan.
+
+I went looking for a worse bug than that and did not find it. The hypothesis was
+that `check_system_messages` would misreport a model-not-found error as a
+template problem. On this endpoint it cannot, because the model name never
+reaches a router. **That case is not evaluable with one endpoint that ignores
+the field**, so no recogniser was written for it — writing one would mean
+matching against an error string nobody here has ever seen.
+
 ## Things measured and deliberately not built
 
 Worth recording so nobody spends a beat rediscovering them.

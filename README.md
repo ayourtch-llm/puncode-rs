@@ -197,6 +197,23 @@ different `--output-dir`. Emptying the old one is not enough — the record
 outlives the files, and `--archive-existing` does not help either. The fixture
 runner stamps its output directory per run for this reason.
 
+`doctor` also checks the model, and the wording of that check was decided by
+measurement rather than by guessing:
+
+```
+  ok       endpoint         answers at http://host:8080/v1
+  note     model            the endpoint lists 1 model(s) and none is my-typo. Some servers
+                            ignore the name and serve whatever they loaded, so this may be
+                            fine — but a mistyped name looks exactly like this and costs a
+                            whole scan to find out.
+```
+
+A **note**, never a failure. The endpoint used here serves whatever it loaded
+and ignores the `model` field entirely, so a name it does not list still works —
+checked, not assumed. Somewhere that routes by name it would not. Both facts are
+true, so both are said, and a note does not stop a scan or fail the exit code. A
+check that raises false alarms gets switched off, and then it protects nothing.
+
 ## Measuring whether it works
 
 A scan produces findings. Whether they are the *right* ones is a separate
