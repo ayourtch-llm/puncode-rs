@@ -43,7 +43,24 @@ puncode-security export <scan-dir> --export-format sarif
 puncode-security info                         # versions and configuration
 ```
 
-Exit codes: `0` clean, `1` findings at or above `--fail-on-severity`, `2` error.
+### Exit codes
+
+| Code | When |
+|---|---|
+| `0` | the scan completed and nothing met `--fail-on-severity` |
+| `1` | a finding at or above `--fail-on-severity` |
+| `2` | the scan failed, **or** completed without covering everything it was asked to |
+
+Two of these surprise people in CI, so they are worth saying plainly.
+
+**Findings alone do not fail a run.** Without `--fail-on-severity` a scan that
+reports critical findings still exits `0`. That matches upstream, and it means a
+CI job which only checks the exit code will pass while findings pile up. Set the
+threshold you actually want to block on.
+
+**Incomplete coverage exits `2`, not `0`.** A scan that ran cleanly but could not
+review everything in scope has not answered the question it was asked, and
+reporting that as success would let a job go green on a partial review.
 
 ## Before you spend a scan
 
