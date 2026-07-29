@@ -31,10 +31,16 @@
 //! **What this cannot do, and says so.** An operator recognises a safe idiom and
 //! replaces it with an unsafe one. Whether the result is genuinely exploitable
 //! depends on whether anything untrusted reaches it, which reading one function
-//! cannot settle. So a generated mutant is a **candidate** until somebody
-//! confirms it, and [`Mutant::confirmed_by`] carries how — for the operators
-//! shipped here, by running an attack against the mutant and the same attack
-//! against the original.
+//! cannot settle. So a generated mutant is a **candidate**, and
+//! [`Mutant::confirmed_by`] records what was actually run against it.
+//!
+//! The confirmations here are **direct calls**: the mutated function invoked
+//! with a hostile argument, and the same argument against the original. That
+//! shows the construct is unsafe when its input is controlled. It does not show
+//! anything untrusted reaches it, and an earlier version of this comment blurred
+//! the two. A scan of `list-to-shell` made precisely that objection — "no
+//! demonstrated exploitable path from untrusted input in the current codebase" —
+//! and deferred rather than reported. It was right to.
 //!
 //! A mutant nobody has confirmed still measures something worth knowing: a
 //! protection was removed and the scanner said nothing. It just must not be
@@ -55,10 +61,16 @@ pub struct Operator {
     pub before: &'static [&'static str],
     /// What replaces it, at the same indentation.
     pub after: &'static [&'static str],
-    /// How the shipped example was shown to be a real flaw.
+    /// How the shipped example was shown to introduce an unsafe sink.
     ///
-    /// `None` when nothing has confirmed it, which is the honest default for an
-    /// operator applied to code nobody has checked.
+    /// **This confirms the sink, not the flaw.** Each attack below calls the
+    /// mutated function directly with a hostile argument. That establishes the
+    /// construct is unsafe when its input is controlled; it does not establish
+    /// that anything untrusted reaches it. A scan of `list-to-shell` made
+    /// exactly that objection and deferred the finding, and it was right to.
+    ///
+    /// `None` when nothing has been run at all, which is the honest default for
+    /// an operator applied to code nobody has checked.
     pub confirmed_by: Option<&'static str>,
 }
 
@@ -103,8 +115,9 @@ pub const OPERATORS: &[Operator] = &[
         before: &["\"SELECT sku, name, quantity FROM items WHERE sku = ?\", (sku,)"],
         after: &["\"SELECT sku, name, quantity FROM items WHERE sku = '\" + sku + \"'\""],
         confirmed_by: Some(
-            "An injection payload through find_item returned a row it must not have; the same \
-             payload against the original returned nothing.",
+            "Calling find_item directly with an injection payload returned a row it must not \
+             have; the same payload against the original returned nothing. Direct call: this \
+             shows the sink is injectable, not that untrusted input reaches it.",
         ),
     },
     Operator {
@@ -118,8 +131,9 @@ pub const OPERATORS: &[Operator] = &[
         ],
         after: &[],
         confirmed_by: Some(
-            "export_path(\"../../etc/passwd\") returned a path outside EXPORT_ROOT; the original \
-             refused it.",
+            "Calling export_path(\"../../etc/passwd\") directly returned a path outside \
+             EXPORT_ROOT; the original refused it. Direct call: this shows the sink escapes the \
+             root, not that untrusted input reaches it.",
         ),
     },
     Operator {
@@ -130,8 +144,10 @@ pub const OPERATORS: &[Operator] = &[
         before: &["subprocess.run([\"gzip\", \"--force\", path], check=True)"],
         after: &["subprocess.run(f\"gzip --force {path}\", shell=True, check=True)"],
         confirmed_by: Some(
-            "A path of \"x; touch /tmp/pwned\" ran the second command; the original passed it to \
-             gzip as a filename.",
+            "Calling compress_export directly with \"x; touch /tmp/pwned\" ran the second \
+             command; the original passed it to gzip as a filename. Direct call: this shows the \
+             sink executes, not that untrusted input reaches it — a scan deferred this very \
+             finding for exactly that reason, and was right to.",
         ),
     },
 ];

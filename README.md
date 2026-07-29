@@ -459,8 +459,10 @@ They are applied here to `inventory-service` — the control fixture, which this
 scanner has reported clean in every run — so a mutant is a flaw in code it has
 already cleared.
 
-**Each one was confirmed by attacking it**, against the mutant and the
-unmutated original:
+**Each one was attacked**, against the mutant and the unmutated original — by
+calling the mutated function directly with a hostile argument. That shows the
+construct is unsafe *when its input is controlled*; it does not show anything
+untrusted reaches it:
 
 | Operator | Original | Mutant |
 |---|---|---|
@@ -472,8 +474,14 @@ unmutated original:
 
 An operator swaps a safe idiom for an unsafe one. Whether the result is
 reachable from untrusted input is not something reading one function can settle,
-so **a generated mutant is a candidate until somebody confirms it**. Each carries
-`confirmed_by` recording how, and a test refuses to ship an operator without one.
+so **a generated mutant is a candidate**. Each carries `confirmed_by` recording
+what was actually run, and a test refuses to ship an operator without it.
+
+Scanning these three made the point better than the documentation did. Two were
+reported; the third was **deferred**, with the scan saying the command-injection
+sink "has no demonstrated exploitable path from untrusted input in the current
+codebase". That is the same objection this section makes, raised by the tool
+against the corpus — and it was right.
 
 A mutant nobody has confirmed still measures something worth knowing — a
 protection was removed and the scanner said nothing — but it must not be read as

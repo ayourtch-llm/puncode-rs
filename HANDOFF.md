@@ -169,7 +169,35 @@ fixture with exactly one protection broken.
   export_path". And it cited line 15, the `SKU_PATTERN` constant, as
   `root_control` — it noticed the validator exists and is not applied here.
 
-`list-to-shell` still running.
+- **`list-to-shell`: seen and deferred, not missed.** Zero findings, coverage
+  partial, exit 2 — and the coverage document says why:
+
+  > Command injection sink in compress_export has no demonstrated exploitable
+  > path from untrusted input in the current codebase; deferred pending review.
+
+  The surface is marked `needs_follow_up`. The scan found the `shell=True` sink,
+  reasoned about reachability, and declined to report. **Without the
+  deferred-versus-missed distinction built earlier, this would have read as
+  "0 findings, missed it."**
+
+### The result that corrected me twice
+
+The scan was right, and it caught an overstatement in my own ground truth.
+
+All three of my confirmations are **direct calls**: I invoked the mutated
+function with a hostile argument. That shows the construct is unsafe *when its
+input is controlled*. It does not show anything untrusted reaches it — and
+`inventory-service` is a library, so for `compress_export` nothing does.
+
+So `confirmed_by` was claiming more than the attacks established, on all three
+operators, and the scanner objected to exactly that on the one where it matters
+most. The strings now say "direct call: this shows the sink executes, not that
+untrusted input reaches it".
+
+Two of the three were reported anyway, which is the scanner making a different
+call about an unsafe sink in library code than it made for the third. Whether
+that inconsistency is a defect is a judgement about reporting policy, not
+something these three runs settle.
 
 ### The prediction that was wrong, and the better statement
 
