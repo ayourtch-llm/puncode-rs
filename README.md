@@ -377,6 +377,40 @@ here. A difference is not a failure — an older scan is still a valid scan — 
 it means rerunning here would not be rerunning what made these results, and
 that is worth knowing before trying to reproduce them.
 
+### The one document the seal cannot check
+
+The manifest lists a digest for every artifact a scan produced, and each is
+verified against what is on disk. That leaves exactly one file unchecked, and it
+is the one everything else hangs from: **the manifest is not an artifact of
+itself.** Replace it and every digest it records still matches, so the scan
+verifies as fully consistent. A real scan directory here did exactly that.
+
+So `verify` looks at the manifest itself. The plugin writes every contract
+document through one function, which is specific in two unrelated ways — sorted
+keys with a trailing newline, and mode `600` rather than the umask. A document
+missing either was written by something else:
+
+```
+  note     the scan manifest was not written by the plugin's own writer
+           keys are not in sorted order at the top level
+           the file is mode 664, and the writer creates 600
+           The content parses and the artifact digests above still match, so
+           the findings themselves are readable and unchanged.
+           Scans in this state have both failed to publish and published
+           normally, so this is a reason to look rather than a verdict.
+```
+
+Those last two lines are the point. The first version of this check said such a
+scan had been *refused* by the workbench, which sounded right and was wrong:
+checking against real runs found eleven scans in this state and three of them
+had published perfectly well. So it reports the fact and not a verdict, and
+**does not fail verification** — a check that cries wolf is switched off, and
+then it protects nothing.
+
+It also does not offer to rewrite the file into canonical form. That is
+resealing a document somebody else changed, which is the one thing a seal exists
+to prevent.
+
 ## Knowing how a scan was produced
 
 Every scan writes `provenance.json` beside its findings:

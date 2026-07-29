@@ -17,6 +17,7 @@ pub mod diagnosis;
 pub mod endpoint_shim;
 pub mod error;
 pub mod knowledge_base;
+pub mod manifest_form;
 pub mod model_endpoint;
 pub mod models;
 pub mod multiscan;

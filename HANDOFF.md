@@ -161,6 +161,38 @@ A test asserts both.
 **If you add a field carrying something sensitive, give it a type rather than a
 convention.** Three fixes over two days did not stop the leak; the type did.
 
+## The seal cannot check itself
+
+The manifest carries a digest for every artifact a scan produced and
+`contract::seal` verifies each one. **The manifest is not an artifact of
+itself**, so nothing in the contract checks it — replace it and every digest it
+records still matches. A real scan directory verified as fully consistent while
+the workbench had refused to publish it.
+
+`manifest_form.rs` checks the root of the chain, using two properties of the
+plugin's single document writer:
+
+```python
+json.dumps(payload, indent=2, sort_keys=True) + "\n"
+os.open(..., O_CREAT | O_EXCL, 0o600)
+```
+
+Sorted keys and mode 600. They share no implementation, and across 25 real
+manifests on this machine they agreed on every one — which is what a genuine
+common cause looks like rather than a coincidence.
+
+**Do not reconstruct the canonical bytes and compare.** That was the obvious
+approach: Python escapes non-ASCII by default and Rust does not, so a manifest
+naming a path with an accent in it would be called a forgery. The check reads
+structure instead.
+
+**And the mistake worth remembering.** The first version said a document in this
+state meant the workbench had refused the scan. It sounded right, the c-memory
+case fit it exactly, and it was wrong: of eleven flagged scans, three had
+published normally. It now reports the fact and not a verdict and deliberately
+does **not** fail verification. If you are tempted to make it fail, get evidence
+first — a check that cries wolf gets switched off, and then it protects nothing.
+
 ## Where the bugs have actually been
 
 Not in units. Every unit test passed while each of these was live. They were
@@ -172,6 +204,12 @@ found by two questions, both worth asking again:
   truncate, so run two erased run one. Each feature was correct alone.
 - A credential redaction applied to `provenance.json` and to none of the three
   other places that printed the same URL.
+
+**"What checks the checker?"**
+
+- `verify` reported "documents agree with each other and with their digests" for
+  a scan the workbench had refused, because the manifest verifies everything
+  except itself. Every check in the chain passed; the chain had no root.
 
 **"Which branch has never actually run?"**
 

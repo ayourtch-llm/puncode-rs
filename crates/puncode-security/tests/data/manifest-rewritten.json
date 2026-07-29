@@ -1,0 +1,88 @@
+{
+  "documentType": "codex-security.scan-manifest",
+  "schemaVersion": "1.0",
+  "scan": {
+    "id": "89f30843-8469-4bfe-8664-a44b1ab0291c",
+    "startedAt": "2026-07-29T15:16:05.000000Z",
+    "completedAt": "2026-07-29T15:16:05.000000Z",
+    "sealedAt": "2026-07-29T15:16:05.000000Z",
+    "status": "completed",
+    "producer": {
+      "name": "codex-security-plugin",
+      "version": "0.1.14"
+    },
+    "target": {
+      "targetId": "target_sha256_d986b9df29e4d5430009b4e60bf135d9e1f5d4364bc150bd0d1165c4ec45caa8",
+      "displayName": "c-memory.src",
+      "kind": "git_revision",
+      "revision": "430ea8b89a119e9bcc7a49947f4f641a2434ee74"
+    },
+    "scope": {
+      "includePaths": [
+        "."
+      ],
+      "excludePaths": []
+    },
+    "artifacts": [
+      {
+        "path": "artifacts/02_discovery/candidate_ledger.jsonl",
+        "sha256": "697a8e9ccda313b227494fab7606d954aea872bdd917b453f4e6d2db7ddb185c",
+        "mediaType": "application/jsonl"
+      },
+      {
+        "path": "findings.json",
+        "sha256": "299c136b86e0a247cbf4d57558b9f0fdc86efcb7c1e479b6277fd7a2728876ec",
+        "mediaType": "application/json"
+      },
+      {
+        "path": "coverage.json",
+        "sha256": "2360745a581d6c2784404ea6a578927fe324be040ae89c8e008354b22b380263",
+        "mediaType": "application/json"
+      },
+      {
+        "path": "artifacts/05_findings/candidate-06c3eed51fd29ca0/candidate_ledger.jsonl",
+        "sha256": "bd0f2e0bc34f50ad5060120d461122997651c7554b77a0e1992601e6854a64ec",
+        "mediaType": "application/jsonl"
+      },
+      {
+        "path": "artifacts/05_findings/candidate-1577096a6241839e/candidate_ledger.jsonl",
+        "sha256": "cf43f3fc9df6076190334963e6f68937ba2b9f03be120e1a8f9054a276700d96",
+        "mediaType": "application/jsonl"
+      },
+      {
+        "path": "artifacts/05_findings/candidate-7ec2a33cc6e24764/candidate_ledger.jsonl",
+        "sha256": "4e3823a3cfb92d4beb7cbf070d908d23f9227255b1c9714d77ccf071a8436d87",
+        "mediaType": "application/jsonl"
+      }
+    ],
+    "evidence": {
+      "discovery": {
+        "candidateLedger": {
+          "path": "artifacts/02_discovery/candidate_ledger.jsonl",
+          "digest": "697a8e9ccda313b227494fab7606d954aea872bdd917b453f4e6d2db7ddb185c",
+          "rowCount": 3
+        }
+      },
+      "findings": {
+        "count": 3,
+        "digests": {
+          "candidate-1577096a6241839e": "cf43f3fc9df6076190334963e6f68937ba2b9f03be120e1a8f9054a276700d96",
+          "candidate-06c3eed51fd29ca0": "bd0f2e0bc34f50ad5060120d461122997651c7554b77a0e1992601e6854a64ec",
+          "candidate-7ec2a33cc6e24764": "4e3823a3cfb92d4beb7cbf070d908d23f9227255b1c9714d77ccf071a8436d87"
+        }
+      }
+    },
+    "files": {
+      "total": 3,
+      "reviewed": 3,
+      "binarySkipped": [],
+      "listed": [
+        "Makefile",
+        "src/store.c",
+        "store"
+      ]
+    },
+    "coverageRef": "coverage.json",
+    "findingsRef": "findings.json"
+  }
+}
