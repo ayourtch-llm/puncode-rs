@@ -39,6 +39,8 @@ pub enum Cause {
     OutputDirectoryAlreadyScanned,
     /// Something wrote into the scanned tree while the scan was running.
     WorkingTreeChanged,
+    /// The manifest on disk is not the one the plugin serialised.
+    ManifestNotAsSerialised,
 }
 
 impl Cause {
@@ -84,6 +86,16 @@ impl Cause {
                  and the object files land in the tree it is scanning. Check for build output \
                  next to the source. Scan a copy of the repository rather than the working tree, \
                  or arrange for builds to write somewhere else."
+            }
+            Self::ManifestNotAsSerialised => {
+                "The scan manifest on disk is not byte-for-byte what the plugin serialised, so \
+                 the workbench refused to publish it. The wording suggests a race and it is \
+                 usually not one: the agent writes the manifest itself instead of letting the \
+                 plugin's own writer produce it, and the result parses identically while \
+                 differing in key order or a trailing newline. The findings are intact — run \
+                 `puncode-security verify` on the partial output to see exactly what differs. \
+                 Do not rewrite the file to match: resealing a document by hand is what a seal \
+                 exists to prevent."
             }
             Self::OutputDirectoryAlreadyScanned => {
                 "A scan is already recorded against this output directory, and the workbench \
@@ -142,6 +154,10 @@ pub fn recognise_from(text: &str, origin: Origin) -> Option<Cause> {
         || (lowered.contains("working tree") && lowered.contains("changed while the scan"))
     {
         return Some(Cause::WorkingTreeChanged);
+    }
+    // The workbench's own wording, which reads like a race and is not one.
+    if lowered.contains("sealed scan manifest changed") {
+        return Some(Cause::ManifestNotAsSerialised);
     }
     if lowered.contains("system message must be at the beginning")
         || (lowered.contains("system message") && lowered.contains("only one"))
@@ -698,5 +714,67 @@ mod changed_paths_tests {
         }
 
         assert_eq!(changed_paths(directory.path()).len(), 10);
+    }
+}
+
+#[cfg(test)]
+mod manifest_publication_tests {
+    use super::*;
+
+    /// The exact message three real runs produced on 2026-07-29.
+    #[test]
+    fn recognises_the_message_real_runs_produced() {
+        for failure in [
+            "Could not save the Puncode Security scan: The sealed scan manifest changed while it \
+             was being published.",
+            "The sealed scan manifest changed after completion.",
+        ] {
+            assert_eq!(
+                recognise(failure),
+                Some(Cause::ManifestNotAsSerialised),
+                "{failure}"
+            );
+        }
+    }
+
+    /// The message names a race. It is not one, and saying so is most of the
+    /// value: somebody told to retry a race will retry, and it will happen
+    /// again.
+    #[test]
+    fn the_explanation_says_it_is_not_a_race() {
+        let explanation = Cause::ManifestNotAsSerialised.explanation();
+
+        assert!(explanation.contains("usually not one"), "{explanation}");
+        assert!(
+            explanation.contains("agent writes the manifest"),
+            "{explanation}"
+        );
+        // And that the work survives, which the workbench's message does not say.
+        assert!(explanation.contains("findings are intact"), "{explanation}");
+        // And what not to do about it.
+        assert!(explanation.contains("Do not rewrite"), "{explanation}");
+    }
+
+    #[test]
+    fn is_not_read_out_of_command_output() {
+        let failure = "The sealed scan manifest changed while it was being published.";
+
+        assert_eq!(recognise_from(failure, Origin::CommandOutput), None);
+    }
+
+    /// It must stay distinct from the other two save failures, which have
+    /// different causes and different answers.
+    #[test]
+    fn is_distinct_from_the_other_save_failures() {
+        for other in [
+            "Repository HEAD changed while the scan was running.",
+            "Working-tree contents changed while the scan was running.",
+        ] {
+            assert_ne!(
+                recognise(other),
+                Some(Cause::ManifestNotAsSerialised),
+                "{other}"
+            );
+        }
     }
 }

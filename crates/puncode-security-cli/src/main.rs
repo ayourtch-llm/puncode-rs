@@ -294,6 +294,17 @@ fn scan_once(options: &cli::ScanArgs) -> std::process::ExitCode {
             // scanned tree changed and cannot say what changed; usually it is
             // one build artefact sitting next to the source, and naming it
             // turns a baffling failure into an obvious one.
+            // The same idea for the manifest: the workbench can say it does not
+            // match and cannot say how, while the answer is on disk in the
+            // partial output it just kept.
+            if puncode_security::diagnosis::recognise(&problem)
+                == Some(puncode_security::diagnosis::Cause::ManifestNotAsSerialised)
+                && let Some(scan_dir) = progress.scan_dir.as_deref()
+            {
+                for line in commands::scan::manifest_evidence(scan_dir) {
+                    eprintln!("puncode-security: {line}");
+                }
+            }
             if puncode_security::diagnosis::recognise(&problem)
                 == Some(puncode_security::diagnosis::Cause::WorkingTreeChanged)
             {

@@ -436,6 +436,24 @@ pub fn run(
     })
 }
 
+/// What a refused manifest looks like on disk, for a person.
+///
+/// The workbench can say the manifest does not match what it serialised and
+/// cannot say how; the answer is sitting in the partial output it just kept.
+/// Empty when there is nothing to say, so the caller can print it blindly.
+#[must_use]
+pub fn manifest_evidence(scan_dir: &Path) -> Vec<String> {
+    let form = puncode_security::manifest_form::inspect_manifest_file(
+        &scan_dir.join("scan-manifest.json"),
+    );
+    let puncode_security::manifest_form::ManifestForm::NotFromTheWriter { how, .. } = form else {
+        return Vec::new();
+    };
+    std::iter::once("the manifest it kept is not the plugin writer's output:".to_owned())
+        .chain(how.into_iter().map(|reason| format!("  {reason}")))
+        .collect()
+}
+
 /// What the scan means for the process's exit status.
 ///
 /// Three outcomes have to stay distinguishable, because a CI job acts on each
@@ -774,5 +792,56 @@ mod addressed_text_tests {
             lines.iter().any(|line| line.contains("has 12 line(s)")),
             "{lines:?}"
         );
+    }
+
+    /// Against the real manifest from a scan the workbench actually refused.
+    #[test]
+    fn names_what_differs_in_a_refused_manifest() {
+        let directory = tempfile::tempdir().expect("a directory");
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../puncode-security/tests/data/manifest-rewritten.json"),
+            directory.path().join("scan-manifest.json"),
+        )
+        .expect("copies");
+
+        let evidence = manifest_evidence(directory.path());
+
+        assert!(
+            evidence[0].contains("not the plugin writer's output"),
+            "{evidence:?}"
+        );
+        assert!(
+            evidence.iter().any(|line| line.contains("sorted order")),
+            "{evidence:?}"
+        );
+    }
+
+    /// And nothing about one the writer produced, so the caller can print it
+    /// without checking first.
+    #[test]
+    fn says_nothing_about_a_manifest_the_writer_produced() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let target = directory.path().join("scan-manifest.json");
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../puncode-security/tests/data/manifest-sealed.json"),
+            &target,
+        )
+        .expect("copies");
+        std::fs::set_permissions(
+            &target,
+            <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o600),
+        )
+        .expect("chmod");
+
+        assert!(manifest_evidence(directory.path()).is_empty());
+    }
+
+    #[test]
+    fn says_nothing_when_there_is_no_manifest() {
+        let directory = tempfile::tempdir().expect("a directory");
+
+        assert!(manifest_evidence(directory.path()).is_empty());
     }
 }

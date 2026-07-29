@@ -245,6 +245,24 @@ Scored against the corpus as it stands, which has nine flaws in these four
 fixtures — the earlier tables said eight, before a real NULL dereference in
 `kv-store` was checked and recorded.
 
+**The cross-file fixture gave the first discriminating answer this corpus has
+produced.** `report-service` plants two flaws that cannot be seen inside one
+function, and the model split them cleanly:
+
+- **Taint across three files: found**, with the whole path traced —
+  `app.py:22` entrypoint → `util.py:9` source → `store.py:21` sink. It followed
+  a request parameter through a helper that looks like a sanitiser and is not.
+- **A missing control: never noticed.** `/admin/export` omits the
+  `require_admin()` that both sibling routes call. Coverage marks `app.py` as
+  *reported*, so it read the file and did not see the absent line.
+
+Nothing was reported against the decoy — the same cross-file shape ending in a
+bound parameter — so it is not simply flagging any input that reaches a query.
+
+That is a useful thing to be able to say about a scanner: **it can follow taint
+it can see, and it cannot see an absence.** Every earlier fixture answered
+"found it" or "missed the subtle one", which says much less.
+
 | Run | Detection | False positives | Decoy trips | Corpus |
 |---|---|---|---|---|
 | 12:59 | 6–7 of 9 | 0 | — (no decoys yet) | answers in the source |
@@ -252,6 +270,15 @@ fixtures — the earlier tables said eight, before a real NULL dereference in
 | 15:09 | 7 of 9 | 0 | 0 of 5 | answers in the source |
 | 16:24 | 5–7 of 9 | 0 | 0 of 5 | **answers removed** |
 | 16:31 | 9–11 of 11 | 1 → 0 | 0 of 5 | + the injection twin |
+| 17:05 | 8–9 of 13 | 0 | 0 of 6 | + the cross-file fixture |
+
+The last row is the lowest recorded and the corpus is the reason, not the tool:
+two of the four newly-missed flaws are the ones added because they are hard.
+`kv-store` also dropped to 2 of 4 on a run where it has managed 3 and 4, which
+is the same run-to-run variance as everywhere else here.
+
+The injection twin came out 2 of 2 again — a second independent replication that
+the note changes nothing.
 
 A range wherever some match rests on location alone against a class the scan
 named differently. Both bounds are real and neither is the answer: most of those
@@ -539,6 +566,26 @@ failure into a one-line one.
 findings by running the code, and the workbench refuses a scan whose tree
 changed. Those two requirements are in direct conflict on any repository with a
 build step, and the cost lands at the very end.
+
+## Three save failures, three different causes
+
+All three are reported by `scan` now, with evidence rather than only a
+diagnosis. They are easy to confuse and have nothing in common.
+
+| Message | What it means |
+|---|---|
+| `Repository HEAD changed` | a commit landed during the scan; the fixture runner's snapshot fixes it |
+| `Working-tree contents changed` | something wrote into the scanned tree — usually the agent compiling the code it is scanning |
+| `The sealed scan manifest changed while it was being published` | the manifest on disk is not what the plugin serialised; usually the agent wrote it by hand |
+
+The third reads like a race and is not one. `Cause::ManifestNotAsSerialised`
+says so, and the CLI runs `manifest_form` over the partial output it just kept
+and prints what differs — key order, a missing newline, the file mode. Seen
+three times on 2026-07-29, and all three were the agent's own manifest.
+
+**"Not from the writer" does not imply the scan failed**, and the converse is
+what holds: of eleven scans flagged that way, three published fine, while every
+failure of this kind was flagged. Diagnose from the failure, never the reverse.
 
 ## doctor reports the model as a note, on purpose
 
