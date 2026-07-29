@@ -294,6 +294,10 @@ A run that fails is named and the rest are still compared — a partial answer
 beats none. The exit code reflects the findings, not the agreement: a finding
 seen once is still a finding.
 
+With `--capture-traffic`, each run gets its own file (`traffic-run-1.jsonl` and
+so on). Sharing one would leave only the last, and the reason to capture while
+repeating is to see *why* the runs differed.
+
 The same comparison is available over scans you already have:
 
 Scan the same code twice and you will not get the same answer. Findings appear

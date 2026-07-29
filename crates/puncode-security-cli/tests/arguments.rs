@@ -765,3 +765,44 @@ fn accepts_a_repeat_count_with_an_output_directory() {
         &temporary.path().to_string_lossy(),
     ]);
 }
+
+/// Repeating with a capture must not have every run overwrite the last. The
+/// reason to capture while repeating is to see why the runs differed, which
+/// needs all of them; a shared file leaves only the final one.
+#[test]
+fn each_repeated_run_captures_to_its_own_file() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temporary = tempfile::tempdir().expect("a directory");
+    std::fs::set_permissions(temporary.path(), std::fs::Permissions::from_mode(0o700))
+        .expect("chmod");
+    let capture = temporary.path().join("traffic.jsonl");
+
+    // Nothing answers at port 1, so each run fails fast; the captures are what
+    // this is checking.
+    let (_, _, _) = run(&[
+        "scan",
+        "fixtures/flask-injection",
+        "--base-url",
+        "http://127.0.0.1:1/v1",
+        "--repeat",
+        "2",
+        "--capture-traffic",
+        &capture.to_string_lossy(),
+        "--output-dir",
+        &temporary.path().join("out").to_string_lossy(),
+    ]);
+
+    let written: Vec<String> = std::fs::read_dir(temporary.path())
+        .expect("reads")
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("traffic"))
+        .collect();
+
+    assert!(
+        written.contains(&"traffic-run-1.jsonl".to_owned())
+            && written.contains(&"traffic-run-2.jsonl".to_owned()),
+        "expected one capture per run, found {written:?}"
+    );
+}

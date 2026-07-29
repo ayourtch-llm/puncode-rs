@@ -174,6 +174,13 @@ fn scan(options: &cli::ScanArgs) -> std::process::ExitCode {
         let mut once = options.clone();
         once.output_dir = Some(directory.to_string_lossy().into_owned());
         once.repeat = 1;
+        // One capture file per run. Sharing one truncates it on every run
+        // after the first, and the reason to capture while repeating is to see
+        // why the runs differed — which needs all of them.
+        once.capture_traffic = options
+            .capture_traffic
+            .as_deref()
+            .map(|path| capture_for_run(path, run));
 
         let code = scan_once(&once);
         // A run that failed is named rather than swallowed; the rest are still
@@ -348,6 +355,22 @@ fn bench(options: &cli::BenchArgs) -> std::process::ExitCode {
         eprintln!("puncode-security: {}", shortfall.describe());
     }
     std::process::ExitCode::from(exit::FINDINGS)
+}
+
+/// The capture destination for one run of a repeated scan.
+///
+/// The run number goes before the extension, so the files sort together and
+/// keep whatever suffix the caller chose.
+fn capture_for_run(path: &std::path::Path, run: usize) -> std::path::PathBuf {
+    let stem = path.file_stem().map_or_else(
+        || "traffic".to_owned(),
+        |stem| stem.to_string_lossy().into_owned(),
+    );
+    let name = match path.extension() {
+        Some(extension) => format!("{stem}-run-{run}.{}", extension.to_string_lossy()),
+        None => format!("{stem}-run-{run}"),
+    };
+    path.with_file_name(name)
 }
 
 /// Writes down how this scan was produced, beside what it produced.
